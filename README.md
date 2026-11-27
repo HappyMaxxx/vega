@@ -171,7 +171,7 @@ See the checklist in [docs/WIDGETS.md](docs/WIDGETS.md#checklist) and the [chang
 
 - **0.4** Power outage schedule widget.
 - **0.5** Air-raid alerts map and an offline threat ETA calculator.
-- **Later** GitHub panel, calendar (ICS), RSS, bookmarks and history widgets, an in-page link editor, optional AI in the command bar (your own key, stored locally), browser sync, packaging scripts, English/Ukrainian UI switch.
+- **Later** GitHub panel (pull requests, reviews, CI), calendar (ICS) and Google Calendar/Tasks, Jira panel and Jira-style tasks with a board view, RSS, bookmarks and history widgets, an in-page link editor, optional AI in the command bar (your own key, stored locally), browser sync, packaging scripts, English/Ukrainian UI switch.
 
 ## License
 

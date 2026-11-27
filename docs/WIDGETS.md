@@ -88,13 +88,51 @@ A calculator, not a live tracker. You choose a point (a place name from a built-
 - **Config:** `home` (your location), `speeds` table.
 - **Limits, stated plainly:** VEGA does not receive live flight tracks. There is no public API for them, and scraping chat channels is fragile and out of scope. Results are rough estimates; they ignore routing, altitude and manoeuvres, and must not be used as a safety decision. The widget carries this notice.
 
-### GitHub panel 📋
-Open pull requests, review requests and notifications.
-- **Data:** GitHub REST API with a personal access token stored locally. **Permissions:** optional host permission for `https://api.github.com/*`, requested when enabled.
-- **Config:** `token`, `repos`, `show` (prs / reviews / notifications).
+### GitHub panel 📋 (unscheduled)
+Your pull-request work in one tile.
+- **Shows:** pull requests you authored (with review and CI state), review requests waiting for you, issues assigned to you, notifications and mentions. Optional: workflow runs on your repositories, new releases of repositories you watch, Dependabot and security alerts.
+- **Data:** GitHub REST API with a personal access token (a fine-grained, read-only token is enough). The token is stored only in your browser and sent only to GitHub.
+- **Permissions:** optional host permission for `https://api.github.com/*`, requested when the widget is enabled.
+- **Config (`cfg`):** `token`, `repos` (filter), `show` (`prs` / `reviews` / `issues` / `notifications` / `ci`), `refreshMinutes`.
+- **Size:** default 4×4, min 3×2, max 8×10. Compact layout: three counters ("2 to review · 1 failing · 4 open").
+- **Keyboard:** `Enter` goes inside; arrows move through items; `Enter` opens the item on GitHub, `Ctrl+Enter` in a new tab.
+- **Open questions:** rate limits (conditional requests and caching), and GitHub Enterprise hosts (a custom host asks for its own permission).
 
-### Calendar (ICS) 📋
-Next events from an ICS URL. **Config:** `url`, `days`. **Permissions:** optional host permission for the calendar host.
+### Calendar (ICS) 📋 (unscheduled)
+An agenda for today and the next few days, with the next event highlighted and a countdown.
+- **Data:** an ICS feed URL. This also covers Google Calendar through its *secret address in iCal format* (read-only, no sign-in flow), and Outlook, Apple and Proton calendars through their published ICS links. Recurring events are expanded locally.
+- **Permissions:** optional host permission for the calendar host.
+- **Config:** `url` (one or several), `days`, `showAllDay`, `colorByCalendar`.
+- **Size:** default 3×4, min 2×2, max 6×10. Compact layout: only "next event in 25 min".
+- **Limits:** an ICS link is read-only and refreshes on the calendar provider's schedule (often every few hours).
+
+### Google Calendar and Google Tasks 📋 (unscheduled, after the ICS calendar)
+Calendar events plus your Google to-do list ("list of things to do"), with the ability to tick tasks off.
+- **Phase 1:** events through the ICS link above (nothing to sign in to). Google Tasks cannot be read this way.
+- **Phase 2:** Google Calendar and Google Tasks APIs through OAuth. Sign-in uses the browser's identity API (`identity` permission, optional) and read-only scopes first; write access (tick a task, add an event) is a separate opt-in.
+- **Needs a decision before building:** Google requires an OAuth client. Either the project registers one (and passes Google's verification for the scopes it uses) or each user creates their own client ID and pastes it in. The second keeps the project independent but is more work for the user.
+- **Config:** `calendars`, `taskLists`, `days`, `showCompleted`.
+
+### Jira panel 📋 (unscheduled)
+Your Jira work in one tile.
+- **Shows:** issues assigned to you, or the result of any JQL query you save; status, priority, key and summary; a filter for the current sprint. Optional: move an issue to another status from the tile.
+- **Data:** Jira Cloud REST API with your email and an API token (stored locally), or a personal access token for Jira Data Center. OAuth 2.0 may come later.
+- **Permissions:** optional host permission for your own Jira site (`https://<your-site>.atlassian.net/*` or your self-hosted address), requested when the widget is enabled.
+- **Config:** `site`, `auth`, `jql`, `maxResults`, `fields`, `groupBy` (`status` / `project` / `none`).
+- **Size:** default 4×4, min 3×2, max 8×10. Compact layout: counters per status.
+- **Keyboard:** same pattern as the GitHub panel (`Enter` inside, arrows, `Enter` to open, `Ctrl+Enter` in a new tab).
+
+### Jira-style tasks 📋 (unscheduled)
+Turn the Tasks widget from a plain checklist into a lightweight tracker that lives entirely in your browser.
+- **Fields (all optional):** key (for example `HOME-12`, generated per project), title, description, status (a customisable workflow such as To do / In progress / Done), priority, labels, due date, estimate, project, parent task (sub-tasks).
+- **Views:** the current list view (grouped by status), and a separate **Board** widget with one column per status where tiles move with the keyboard (`h`/`l` change status).
+- **Command bar:** `+ Write the report !high #work @fri` adds a task with priority, label and due date.
+- **Compatibility:** purely additive. Existing tasks (`{id, text, done}`) keep working; `done` stays valid and maps to the final status. Nothing is migrated destructively and exports keep the new fields.
+- **Later, optional:** two-way sync with Jira so a Jira issue can appear as a task and a local task can be pushed to a project. This depends on the Jira panel above.
+- **Open questions:** how much workflow customisation is worth the added screen space, and whether several task lists (per project) should share one widget.
+
+### More integrations 💡
+Ideas that follow the same pattern (token stored locally, optional host permission, one adapter per service): GitLab merge requests and pipelines, Linear issues, Todoist or Microsoft To Do lists, Notion database view, Slack or email unread counts (these need OAuth), Sentry issue counts, uptime/status pages.
 
 ### RSS reader 📋
 Latest items from feeds. **Config:** `feeds`, `limit`. **Permissions:** optional host permission per feed host.
@@ -134,14 +172,20 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [ ] Air-raid alerts map
 - [ ] Threat ETA calculator
 
-**Later**
-- [ ] GitHub panel
-- [ ] Calendar (ICS)
+**Later (unscheduled)**
+- [ ] GitHub panel (pull requests, reviews, issues, notifications, CI)
+- [ ] Calendar (ICS), which also covers Google Calendar events
+- [ ] Google Calendar and Google Tasks through OAuth
+- [ ] Jira panel (assigned issues, JQL, sprint)
+- [ ] Jira-style tasks (status, priority, labels, due date, sub-tasks, project keys)
+- [ ] Board widget (kanban view of tasks)
+- [ ] Jira sync for tasks (optional, after the Jira panel)
 - [ ] RSS reader
 - [ ] Bookmarks
 - [ ] Recent history
 - [ ] Countdown
 - [ ] Quick capture
+- [ ] More integrations (GitLab, Linear, Todoist, Notion, ...)
 - [ ] In-page link editor (not a widget, but unlocks per-tile link lists)
 
 ---
