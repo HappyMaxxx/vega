@@ -1159,6 +1159,19 @@ document.addEventListener('keydown', e => {
   }
 });
 
+/* ═════════════ the toolbar popup and Preferences reuse an open VEGA tab instead of opening another ═════════════ */
+if (isExt && api.runtime.onMessage) {
+  api.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+    if (!msg || (msg.type !== 'vega:open-settings' && msg.type !== 'vega:focus')) return undefined;
+    if (msg.visibleOnly && document.visibilityState !== 'visible') return undefined;   // let the visible tab answer
+    if (msg.type === 'vega:open-settings') openSettings();
+    Promise.resolve(api.tabs && api.tabs.getCurrent ? api.tabs.getCurrent() : null)
+      .then(t => sendResponse(t ? { tabId: t.id, windowId: t.windowId } : {}))
+      .catch(() => sendResponse({}));
+    return true;                                                                       // answer asynchronously
+  });
+}
+
 /* ═════════════ new tab focus (Firefox puts it in the address bar) ═════════════ */
 // Re-open the page once as a regular tab: the browser then leaves focus on the page.
 // The re-opened tab (marked #from=<id>) closes the original and, if allowed, forgets it in 'recently closed'.

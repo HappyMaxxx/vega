@@ -15,6 +15,8 @@ const stateLib = require('../state.js');
 const fixture = () => JSON.parse(read('tests/fixtures/v0.1.0-customized.json'));
 const S = require('../strings.js');
 
+// objects created inside a jsdom window have another Object.prototype: compare plain copies
+const plain = x => JSON.parse(JSON.stringify(x === undefined ? null : x));
 const overlaps = items => items.some((a, i) => items.some((b, j) => j > i && grid.collides(a, b)));
 
 /* ───────────── grid engine ───────────── */
@@ -409,6 +411,80 @@ describe('app (jsdom)', () => {
       const calls = [];
       const a = await boot(withSettings({ focusPage: true, focusForget: true }), w => { mock(calls)(w); w.history.replaceState(null, '', '/#from=7.' + Date.now()); });
       try { await settle(); assert.deepEqual(calls, [['remove', 7], ['forget', 1, '9']]); } finally { await a.close(); }
+    });
+  });
+
+  describe('toolbar popup reuses an open VEGA tab (no duplicates)', () => {
+    const settle = () => new Promise(r => setTimeout(r, 30));
+    async function runPopup(replies, buttonId) {
+      const calls = [];
+      const dom = new JSDOM(read('popup.html'), { url: 'http://localhost/popup.html', runScripts: 'outside-only' });
+      const w = dom.window;
+      w.browser = {
+        runtime: { getURL: p => 'moz-extension://abc/' + p, sendMessage: async m => { calls.push(['msg', m.type, m.visibleOnly]); const r = replies.shift(); if (r === 'throw') throw new Error('no receiver'); return r; } },
+        tabs: { update: async (id, o) => calls.push(['update', id, o]), create: async o => calls.push(['create', o.url]) },
+        windows: { update: async (id, o) => calls.push(['window', id, o]) },
+      };
+      const realClose = w.close.bind(w);
+      w.close = () => calls.push(['close']);
+      w.eval(read('strings.js')); w.eval(read('popup.js'));
+      w.document.getElementById(buttonId).click();
+      await settle(); realClose();
+      return calls;
+    }
+
+    test('an open VEGA tab is focused, nothing new is created', async () => {
+      const calls = await runPopup([{ tabId: 5, windowId: 2 }], 'settings');
+      assert.deepEqual(calls.map(c => c[0]), ['msg', 'update', 'window', 'close']);
+      assert.deepEqual(plain(calls[0]), ['msg', 'vega:open-settings', true]);
+      assert.deepEqual(plain(calls[1]), ['update', 5, { active: true }]);
+    });
+
+    test('visible pages are asked first, then any page', async () => {
+      const calls = await runPopup([undefined, { tabId: 9, windowId: 1 }], 'open');
+      assert.deepEqual(plain(calls.filter(c => c[0] === 'msg').map(c => [c[1], c[2]])), [['vega:focus', true], ['vega:focus', false]]);
+      assert.deepEqual(plain(calls.find(c => c[0] === 'update')), ['update', 9, { active: true }]);
+      assert.equal(calls.some(c => c[0] === 'create'), false);
+    });
+
+    test('with no VEGA tab open a new one is created (settings keep their ?settings marker)', async () => {
+      const calls = await runPopup(['throw', 'throw'], 'settings');
+      assert.deepEqual(plain(calls.filter(c => c[0] === 'create')), [['create', 'moz-extension://abc/index.html?settings']]);
+    });
+  });
+
+  describe('a VEGA page answers the popup', () => {
+    const settle = () => new Promise(r => setTimeout(r, 30));
+    const boot2 = async (visibility) => {
+      let listener = null;
+      const a = await boot(fixture(), w => {
+        w.browser = { runtime: { id: 'x', getURL: p => p, onMessage: { addListener: f => { listener = f; } } }, tabs: { getCurrent: async () => ({ id: 7, windowId: 2, index: 0 }) }, permissions: { contains: async () => false } };
+        if (visibility) Object.defineProperty(w.document, 'visibilityState', { value: visibility, configurable: true });
+      });
+      return { a, ask: msg => new Promise(res => { let sync = listener(msg, {}, res); if (!sync) res(undefined); }) };
+    };
+
+    test('open-settings opens the dialog and returns this tab id', async () => {
+      const { a, ask } = await boot2();
+      try {
+        const r = await ask({ type: 'vega:open-settings', visibleOnly: true });
+        assert.deepEqual(plain(r), { tabId: 7, windowId: 2 });
+        assert.ok(a.w.document.querySelector('.mbox'));
+      } finally { await a.close(); }
+    });
+
+    test('a hidden tab stays silent when only visible tabs were asked', async () => {
+      const { a, ask } = await boot2('hidden');
+      try {
+        assert.equal(await ask({ type: 'vega:open-settings', visibleOnly: true }), undefined);
+        assert.equal(a.w.document.querySelector('.mbox'), null);
+        assert.deepEqual(plain(await ask({ type: 'vega:focus', visibleOnly: false })), { tabId: 7, windowId: 2 });
+      } finally { await a.close(); }
+    });
+
+    test('unrelated messages are ignored', async () => {
+      const { a, ask } = await boot2();
+      try { assert.equal(await ask({ type: 'something-else' }), undefined); } finally { await a.close(); }
     });
   });
 
