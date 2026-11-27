@@ -732,6 +732,20 @@ function hl(label, idx) {
 }
 
 /* ═════════════ command palette ═════════════ */
+// Optional host permission: asked the first time it is needed. request() resolves true at once if it is already granted,
+// and is called synchronously from the click handler so the browser still sees the user gesture.
+const GEO = 'https://geocoding-api.open-meteo.com/';
+async function ensureOrigin(origin) {
+  if (!isExt || !api.permissions || !api.permissions.request) return true;
+  try { return await api.permissions.request({ origins: [origin] }); }
+  catch { return true; }                         // permission API without optional hosts: just try the request
+}
+async function findCities(q) {
+  const r = await fetch(`${GEO}v1/search?name=${encodeURIComponent(q)}&count=8&language=${S.lang}&format=json`);
+  if (!r.ok) throw new Error(r.status);
+  return ((await r.json()).results || []).map(c => ({ name: c.name, admin: c.admin1 || '', country: c.country || '', lat: c.latitude, lon: c.longitude }));
+}
+
 const openUrl = (u, newTab) => { if (newTab) window.open(u, '_blank', 'noopener'); else location.assign(u); };
 
 function commands() {
@@ -945,6 +959,25 @@ function openSettings() {
   const dots = h('input', { type: 'checkbox', checked: s.linkTheme, onchange: () => { s.linkTheme = dots.checked; refresh('links'); } });
   syncAccent();
 
+  // City search: fills the label and coordinates below.
+  const cityQ = h('input', { class: 'fi', placeholder: S.cityPlaceholder, 'aria-label': S.setCityFind, autocomplete: 'off' });
+  const cityRes = h('div', { class: 'city-res', role: 'listbox' });
+  const searchCity = async () => {
+    const q = cityQ.value.trim(); if (q.length < 2) return;
+    const ok = await ensureOrigin(GEO + '*');                  // first statement: still inside the user gesture
+    if (!ok) { cityRes.replaceChildren(h('div', { class: 'note', text: S.cityDenied })); return; }
+    cityRes.replaceChildren(h('div', { class: 'note', text: S.bgProbing }));
+    try {
+      const list = await findCities(q);
+      cityRes.replaceChildren(...(list.length ? list.map(c => h('button', { class: 'mi', type: 'button', role: 'option', onclick: () => {
+        f.place.value = c.name; f.lat.value = c.lat; f.lon.value = c.lon; cityRes.replaceChildren(h('div', { class: 'note', text: S.cityPicked(c.name) }));
+      } }, h('span', { text: [c.name, c.admin, c.country].filter(Boolean).join(', ') }), h('span', { class: 'phn', text: `${c.lat.toFixed(2)}, ${c.lon.toFixed(2)}` })))
+        : [h('div', { class: 'note', text: S.cityNone })]));
+    } catch { cityRes.replaceChildren(h('div', { class: 'note', text: S.cityFail })); }
+  };
+  const cityGo = h('button', { class: 'btn', type: 'button', onclick: searchCity }, S.citySearch);
+  cityQ.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchCity(); } });
+
   // Background: URL or local file, fit mode, sharpening. The note says whether the source is big enough for this screen.
   let pendingFile = null, removeLocal = false, probeT = 0;
   const bgField = field_('bg', S.setBgUrl, 'url', s.bg);
@@ -954,9 +987,9 @@ function openSettings() {
   const fileName = h('span', { class: 'note', text: S.bgFileNone });
   const picker = h('input', { type: 'file', accept: 'image/*,video/*', hidden: true });
   const refreshInfo = async () => {
-    let src = null, video = false, own = false;
-    if (pendingFile) { src = URL.createObjectURL(pendingFile); own = true; video = pendingFile.type.startsWith('video/'); }
-    else if (s.bgLocal && !removeLocal && VEGA.bgstore) { try { const rec = await VEGA.bgstore.get('bg'); if (rec) { src = URL.createObjectURL(rec.blob); own = true; video = rec.blob.type.startsWith('video/'); } } catch { /* ignore */ } }
+    let src = null, video = false, own = false, bytes = 0;
+    if (pendingFile) { src = URL.createObjectURL(pendingFile); own = true; bytes = pendingFile.size; video = pendingFile.type.startsWith('video/'); }
+    else if (s.bgLocal && !removeLocal && VEGA.bgstore) { try { const rec = await VEGA.bgstore.get('bg'); if (rec) { src = URL.createObjectURL(rec.blob); own = true; bytes = rec.blob.size; video = rec.blob.type.startsWith('video/'); } } catch { /* ignore */ } }
     else if (f.bg.value.trim()) { src = f.bg.value.trim(); video = VIDEO_EXT.test(src); }
     if (!src) { bgInfo.textContent = ''; return; }
     bgInfo.textContent = S.bgProbing;
@@ -965,7 +998,8 @@ function openSettings() {
     if (!size || !size[0]) { bgInfo.textContent = S.bgUnknown; return; }
     const sw = Math.round(innerWidth * devicePixelRatio), sh = Math.round(innerHeight * devicePixelRatio);
     const scale = s.bgFit === 'actual' ? 1 : Math.max(sw / size[0], sh / size[1]);
-    bgInfo.textContent = S.bgInfo(size[0], size[1], sw, sh, scale) + (video ? ' ' + S.bgVideoNote : '');
+    const facts = video && size[2] && isFinite(size[2]) ? ' ' + S.bgVideoFacts(size[2], bytes) + (Math.max(size[0], size[1]) >= 3000 ? ' ' + S.bgHeavy : '') : '';
+    bgInfo.textContent = S.bgInfo(size[0], size[1], sw, sh, scale) + (video ? ' ' + S.bgVideoNote : '') + facts;
   };
   const queueInfo = () => { clearTimeout(probeT); probeT = setTimeout(refreshInfo, 400); };
   bgField.addEventListener('input', queueInfo);
@@ -1016,7 +1050,9 @@ function openSettings() {
     h('h3', { text: S.setAppearance }), group,
     h('div', { class: 'fr' }, h('span', { text: S.setAccent }), h('div', { class: 'row ctl' }, acc, accReset, accNote)),
     h('label', { class: 'fr' }, h('span', { text: S.setLinkTheme }), h('span', { class: 'row' }, dots)),
-    h('h3', { text: S.setWeather }), field_('place', S.setPlace, 'text', s.place), field_('lat', S.setLat, 'number', s.lat), field_('lon', S.setLon, 'number', s.lon),
+    h('h3', { text: S.setWeather }),
+    h('div', { class: 'fr' }, h('span', { text: S.setCityFind }), h('div', { class: 'row ctl' }, cityQ, cityGo)), cityRes,
+    field_('place', S.setPlace, 'text', s.place), field_('lat', S.setLat, 'number', s.lat), field_('lon', S.setLon, 'number', s.lon),
     h('h3', { text: S.setTimerSearch }), field_('focusMin', S.setFocusMin, 'number', s.focusMin), field_('breakMin', S.setBreakMin, 'number', s.breakMin),
     h('label', { class: 'fr' }, h('span', { text: S.setEngine }), eng),
     h('h3', { text: S.setBg }), bgField,
@@ -1088,7 +1124,7 @@ function probeMedia(src, isVideo) {
   return new Promise(resolve => {
     const el = isVideo ? document.createElement('video') : new Image();
     el.onload = () => resolve([el.naturalWidth, el.naturalHeight]);
-    el.onloadedmetadata = () => resolve([el.videoWidth, el.videoHeight]);
+    el.onloadedmetadata = () => resolve([el.videoWidth, el.videoHeight, el.duration]);
     el.onerror = () => resolve(null);
     if (isVideo) el.preload = 'metadata';
     el.src = src;

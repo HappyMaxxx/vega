@@ -123,6 +123,11 @@ const S = {
   bgProbing: 'Checking…', bgUnknown: 'Cannot read the size of this file',
   bgInfo: (w, h, sw, sh, scale) => `Source ${w}×${h}, screen ${sw}×${sh} (device pixels). ` + (scale > 1.05
     ? `It is enlarged ${scale.toFixed(1)}×, so it will look soft. Use at least ${sw}×${sh}.` : 'Large enough: it stays sharp.'),
+  bgVideoFacts: (sec, bytes) => `Video ${Math.round(sec)} s` + (bytes ? `, ${(bytes / 1048576).toFixed(1)} MB, about ${(bytes * 8 / sec / 1e6).toFixed(1)} Mbit/s.` : '.'),
+  bgHeavy: '4K video can use a lot of CPU and battery; a 1080p version is usually enough.',
+  setCityFind: 'Find a city', cityPlaceholder: 'Type a city name', citySearch: 'Search',
+  cityNone: 'No matches', cityFail: 'Search failed. Check your connection or enter the coordinates yourself.',
+  cityDenied: 'Permission was not granted. Enter the coordinates yourself.', cityPicked: (n) => `Selected ${n}. Save to apply.`,
   bgVideoNote: 'Video plays muted and loops; it pauses when the tab is hidden.',
   setLinks: 'Links (JSON)', setLinksAria: 'Links as JSON',
   setLinksBad: 'Links: invalid JSON. Expected an array of groups {tab, name, links}.',

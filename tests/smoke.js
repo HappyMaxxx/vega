@@ -414,6 +414,59 @@ describe('app (jsdom)', () => {
     });
   });
 
+  describe('city search for the weather location', () => {
+    const settle = () => new Promise(r => setTimeout(r, 40));
+    const results = { results: [{ name: 'Lviv', admin1: 'Lviv Oblast', country: 'Ukraine', latitude: 49.8397, longitude: 24.0297 }, { name: 'Lviv', admin1: '', country: 'Elsewhere', latitude: 1.5, longitude: 2.5 }] };
+    // only the geocoding call is answered; the weather tile's own request fails like an offline network
+    const mockFetch = urls => async u => { if (!String(u).includes('geocoding')) throw new Error('offline'); urls.push(String(u)); return { ok: true, json: async () => results }; };
+    const search = async (a, q) => {
+      a.key('Comma');
+      const d = a.w.document, input = d.querySelector('input[aria-label="Find a city"]');
+      input.value = q;
+      [...d.querySelectorAll('.mbox button')].find(b => b.textContent === 'Search').click();
+      await settle();
+      return d;
+    };
+
+    test('finds cities and fills the label and coordinates', async () => {
+      const urls = []; const a = await boot(fixture(), w => { w.fetch = mockFetch(urls); });
+      try {
+        const d = await search(a, 'Lviv');
+        assert.match(urls.at(-1), /^https:\/\/geocoding-api\.open-meteo\.com\/v1\/search\?name=Lviv&count=8&language=en/);
+        const rows = [...d.querySelectorAll('.city-res .mi')];
+        assert.equal(rows.length, 2);
+        assert.match(rows[0].textContent, /Lviv, Lviv Oblast, Ukraine/);
+        rows[0].click();
+        const values = [...d.querySelectorAll('.mbox input')].map(i => i.value);
+        assert.ok(values.includes('Lviv') && values.includes('49.8397') && values.includes('24.0297'));
+      } finally { await a.close(); }
+    });
+
+    test('in the extension the optional host permission is requested first; a refusal stops the search', async () => {
+      const urls = [], asked = [];
+      const a = await boot(fixture(), w => {
+        w.fetch = mockFetch(urls);
+        w.browser = { runtime: { id: 'x', getURL: p => p }, permissions: { contains: async () => false, request: async o => { asked.push(o); return false; } } };
+      });
+      try {
+        const d = await search(a, 'Lviv');
+        assert.deepEqual(plain(asked), [{ origins: ['https://geocoding-api.open-meteo.com/*'] }]);
+        assert.deepEqual(urls, [], 'no request without the permission');
+        assert.match(d.querySelector('.city-res').textContent, /Permission was not granted/);
+      } finally { await a.close(); }
+    });
+
+    test('a short query does nothing; a failed request shows a message', async () => {
+      const a = await boot(fixture(), w => { w.fetch = async () => { throw new Error('offline'); }; });
+      try {
+        let d = await search(a, 'L');
+        assert.equal(d.querySelector('.city-res').children.length, 0);
+        d = await search(a, 'Lviv');
+        assert.match(d.querySelector('.city-res').textContent, /Search failed/);
+      } finally { await a.close(); }
+    });
+  });
+
   describe('toolbar popup reuses an open VEGA tab (no duplicates)', () => {
     const settle = () => new Promise(r => setTimeout(r, 30));
     async function runPopup(replies, buttonId) {
