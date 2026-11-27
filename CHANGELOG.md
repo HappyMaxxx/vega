@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.4.0
+
+Existing data is kept. This release adds the outages widget, city search for the weather, and fixes the toolbar menu opening duplicate tabs.
+
+### Added
+- **Outages widget.** Shows whether the power is on, the time until the next change, and today's and tomorrow's schedule on a 24-hour bar. Two sources: *Yasno* (automatic; Kyiv and Dnipro; cached, works offline) and *Paste a schedule* (any region; understands `00:00 - 08:00`, `з 14:00 до 18:30`, "today"/"tomorrow" lines and 🔴/🟢 hints; rolls over at midnight). Set up from the tile menu, `Enter` on an unconfigured tile, or the command bar.
+- **Per-tile setup:** *Configure…* in the tile menu and the command bar for widgets that have settings.
+- **City search** in Settings: find a city by name and fill the weather location. The geocoding host is an optional permission, asked on first use.
+- Video wallpapers show duration, size and bitrate (local files) and warn about 4K.
+- README: widget screenshots, wallpaper examples, permissions and data tables. `docs/WIDGETS.md`: outages shipped; ambient sounds, radio/music player, more outage sources and wallpaper presets recorded as planned.
+
+### Fixed
+- The toolbar button's *Settings* and *Open VEGA*, and the add-ons *Preferences* page, now reuse an open VEGA tab instead of always opening a new one. No extra permission is needed.
+
+### Changed
+- Minimum Firefox version is now 140 (needed for optional host permissions and for the data-collection declaration). `web-ext lint`: 0 errors, 0 warnings.
+- New optional host permissions: `https://geocoding-api.open-meteo.com/*` and `https://app.yasno.ua/*`. Nothing new is required at install.
+
+### Known issues and follow-ups
+- Only Yasno schedules are automatic. Other operators publish on sites that block automated access or have no open feed, so those regions use *Paste a schedule* until open data exists.
+- Local wallpapers are not included in JSON exports.
+- "Focus the page on a new tab" still needs a check on your own Firefox.
+
 ## 0.3.0
 
 Existing data is kept: layout, tasks, notes and links load unchanged, and links saved by earlier builds keep their own colours.

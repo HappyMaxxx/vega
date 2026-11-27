@@ -11,7 +11,7 @@ Clock, weather, focus timer, tasks, notes and links on a grid you rearrange with
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Manifest V3](https://img.shields.io/badge/manifest-V3-informational)
-![Firefox 115+](https://img.shields.io/badge/Firefox-115%2B-orange)
+![Firefox 140+](https://img.shields.io/badge/Firefox-140%2B-orange)
 ![Chrome](https://img.shields.io/badge/Chrome-supported-green)
 ![No dependencies](https://img.shields.io/badge/runtime%20dependencies-none-brightgreen)
 
@@ -33,7 +33,7 @@ A new tab is the page you see a hundred times a day. VEGA makes it calm, fast an
 
 | | |
 | --- | --- |
-| **Widgets** | Clock, weather, focus timer, tasks, notes, link groups. Each adapts its layout to the size you give it. See [docs/WIDGETS.md](docs/WIDGETS.md). |
+| **Widgets** | Clock, weather, focus timer, tasks, notes, link groups, power outage schedule. Each adapts its layout to the size you give it. See [docs/WIDGETS.md](docs/WIDGETS.md). |
 | **Workspaces** | Up to nine boards (`1`–`9`), i3-style, each with its own layout. Send a tile to another workspace with `Shift`+`1`–`9`, the tile menu, the command bar, or by dragging it onto the workspace button. |
 | **Command bar** | `/` or `Ctrl+K`. Fuzzy search over your links and commands. `! g query` searches a specific engine, `+ buy milk` adds a task. Typing in the wrong layout is detected. |
 | **Tile menu** | Hover a tile, or press `M`: delete, duplicate, move to a workspace, reset size. |
@@ -81,7 +81,7 @@ Shortcuts are matched by physical key (`event.code`), so they work with any keyb
 | `r` | Resize mode (`h` narrower, `l` wider, `k` shorter, `j` taller), `Esc` to exit |
 | `Enter` | Go inside the focused tile |
 | `Esc` | Leave a tile, close a dialog, leave a mode |
-| `m` | Tile menu (delete, duplicate, move, reset size) |
+| `m` | Tile menu (configure, duplicate, move, reset size, delete) |
 | `x` / `z` | Delete the focused tile / undo (up to 20 steps) |
 | `Shift` + `1`–`9` | Send the focused tile to workspace N |
 | `1`–`9` | Switch workspace |
@@ -92,6 +92,16 @@ Shortcuts are matched by physical key (`event.code`), so they work with any keyb
 | `?` | Keyboard shortcuts |
 
 Inside a tile: **notes** `Enter` puts the caret in the text; **tasks** `↓`/`↑` or `j`/`k` move, `Space` ticks, `x` removes, `i` types a new one; **links** arrows or `h j k l` move to the nearest link, `Enter` opens it, `Ctrl+Enter` opens a new tab.
+
+## Power outage schedule
+
+The *outages* widget shows whether the power is on, when that changes next, and today's and tomorrow's schedule on a 24-hour bar (Kyiv time).
+
+![Outages widget](docs/img/outages.png)
+
+- **Automatic** for the operators [Yasno](https://yasno.ua/) publishes (Kyiv and Dnipro today): choose region, operator and group once. The schedule is cached, so it still shows offline.
+- **Paste a schedule** for any other region: paste the text from your Telegram bot or the operator's site. VEGA reads the time ranges, understands "today"/"tomorrow" and 🔴/🟢 lines, and rolls over at midnight.
+- Set up from the tile menu (`m` → *Configure…*) or press `Enter` on an unconfigured tile. Most regional operators publish only on their own sites, and VEGA does not work around sites that block automated access; more automatic sources are planned as open data becomes available.
 
 ## Wallpapers
 
@@ -104,7 +114,12 @@ Settings → Background accepts a URL, or **Choose file…** for an image or vid
 - **Video**: MP4, WebM or OGV by URL or file. It is muted, loops, pauses when the tab is hidden, and does not autoplay if your system asks for reduced motion. Codec support depends on your browser.
 - Some sites block hotlinking. If a URL does not load, download the file and choose it from disk.
 
-![Wallpaper](docs/img/wallpaper.png)
+<p align="center">
+  <img src="docs/img/wallpaper-porsche.jpg" alt="Live wallpaper (Porsche)" width="49%">
+  <img src="docs/img/wallpaper-minecraft.jpg" alt="Live wallpaper (Minecraft)" width="49%">
+</p>
+
+<sub>The screenshots use third-party live wallpapers from wallsflow.com for illustration. They are not part of this repository; all trademarks and artwork belong to their respective owners.</sub>
 
 ## New tab focus (Firefox)
 
@@ -117,6 +132,8 @@ VEGA collects nothing. Data stays in your browser.
 | Permission | Required | Used for |
 | --- | --- | --- |
 | `https://api.open-meteo.com/*` | yes | The weather tile. Sends only the coordinates you set. |
+| `https://geocoding-api.open-meteo.com/*` | optional | Finding a city by name in Settings. Asked the first time you search. |
+| `https://app.yasno.ua/*` | optional | The outages widget, Yasno source. Asked when you choose it. |
 | `tabs`, `bookmarks`, `history` | optional | Searching them from the command bar. Asked when you enable it. |
 | `sessions` | optional | Hiding the helper tab of "Focus the page" from recently closed tabs. Asked when you enable it. |
 
@@ -127,9 +144,10 @@ Where data lives:
 | `localStorage` `hud.v1` | Layout, tasks, notes, links, settings |
 | `localStorage` `hud.v1.backup` | A copy of your previous data, taken before an update, import or reset |
 | `localStorage` `hud.weather` | Weather cache (15 minutes) |
+| `localStorage` `hud.outage` | Outage schedule cache (the last few schedules) |
 | IndexedDB `vega` | A local wallpaper file, if you chose one |
 
-Move between browsers with **Settings → Export**, then **Import** in the other browser.
+Wallpaper files are not part of exports. Move between browsers with **Settings → Export**, then **Import** in the other browser.
 
 ## Customising
 
@@ -155,6 +173,7 @@ npm test      # grid engine, data migration, moves and undo, keyboard modes, the
 | `grid.js` | Grid engine, pure functions |
 | `state.js` | Defaults, `normalize()`, safe loading and backup |
 | `bgstore.js` | IndexedDB storage for a local wallpaper |
+| `outage.js` | Outage schedule logic (parsing, state, countdown), pure functions |
 | `app.js` | Widgets, command bar, hotkeys, rendering |
 | `popup.*`, `options.*` | Toolbar menu and the add-ons Preferences entry |
 | `icons/` | Extension icons |
@@ -169,8 +188,9 @@ Design rules: vanilla HTML/CSS/JS only, no inline scripts, hotkeys by `event.cod
 
 See the checklist in [docs/WIDGETS.md](docs/WIDGETS.md#checklist) and the [changelog](CHANGELOG.md).
 
-- **0.4** Power outage schedule widget.
+- **0.4** Power outage schedule widget (shipped), more automatic sources as open data allows.
 - **0.5** Air-raid alerts map and an offline threat ETA calculator.
+- **Ideas** ambient sounds and a radio/music player.
 - **Later** GitHub panel (pull requests, reviews, CI), calendar (ICS) and Google Calendar/Tasks, Jira panel and Jira-style tasks with a board view, RSS, bookmarks and history widgets, an in-page link editor, optional AI in the command bar (your own key, stored locally), browser sync, packaging scripts, English/Ukrainian UI switch.
 
 ## License

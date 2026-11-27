@@ -23,6 +23,7 @@ Sizes are grid cells (the board is 12 columns wide, 8 rows visible). A tile can 
 | Tasks | `tasks` | 3×5 | 2×2 | 8×12 | `tasks` (shared by all task tiles) |
 | Notes | `notes` | 4×3 | 2×2 | 12×12 | `data[tileId].text` |
 | Links | `links` | 5×3 | 2×1 | 12×12 | `groups` (shared), `cfg.tab` per tile |
+| Outages | `outage` | 3×3 | 2×2 | 6×6 | `cfg` per tile, cache `hud.outage` |
 
 ### Clock ✅
 Large time with seconds, the date, and a thin bar showing how much of the day has passed.
@@ -58,20 +59,29 @@ Groups of links. Each tile shows all groups, or only one tab (set in edit mode w
 - Settings: links are edited as JSON in Settings today (an in-page editor is planned).
 - Keyboard: `Enter` goes inside; arrows or `h j k l` move to the nearest link in that direction; `Enter` opens it, `Ctrl+Enter` opens a new tab.
 
+### Outages ✅
+Whether the power is on right now, when that changes next, and today's and tomorrow's schedule on a 24-hour bar with a marker for the current time. Times are Kyiv time.
+- **Sources (per tile):**
+  - *Yasno*: automatic for the operators Yasno publishes (Kyiv, Dnipro today). Pick region, operator and group once; the schedule refreshes every 15 minutes and is cached, so the last known schedule is still shown offline.
+  - *Paste a schedule*: works for any region. Paste the text from a Telegram bot or the operator's site; VEGA reads the time ranges (`00:00 - 08:00`, `з 14:00 до 18:30`), understands "today"/"tomorrow" lines and 🔴/🟢 hints, and can treat the times as outages or as power-on periods. A pasted schedule is dated; after midnight "tomorrow" becomes "today", and an older paste asks for a fresh one.
+- **Why not every operator automatically:** most regional operators publish only on their own site, and some of those sites block automated access. VEGA does not try to get around that. Open data sources are added as adapters when they exist (see the planned entry below).
+- **Settings:** open with the tile menu (`m` → *Configure…*), `Enter` on an unconfigured tile, or the command bar.
+- **Config (`cfg`):** `source` (`yasno` | `paste`), `region`, `dso`, `group` for Yasno; `paste` (`date`, `today`, `tomorrow`, `savedAt`, `raw`, `meaning`) for pasted text.
+- **Permissions:** optional host permission for `https://app.yasno.ua/*`, asked only when you choose Yasno. Pasted schedules need nothing.
+- **Layouts:** one line (state and time to the next change) → plus the 24 h bar → plus hour labels → plus today and tomorrow lists and the update age.
+- **Keyboard:** `Enter` refreshes, or opens the setup dialog when unconfigured.
+
 ---
 
 ## Planned widgets
 
 Each entry says what it needs. Anything that talks to a new host asks for that host permission only when the widget is added or enabled, never at install.
 
-### Power outages 📋 (target 0.4.0)
-Shows whether power is on now, when it changes next, and today's schedule as a timeline.
-- **Data:** public outage-schedule feeds published by the regional operators or community mirrors. The exact sources are chosen and verified when the widget is built; the widget is designed around a small adapter per source so a broken feed can be swapped.
-- **Permissions:** optional host permission for the selected source.
-- **Config (`cfg`):** `region`, `group` (queue/subgroup), `source`.
-- **Size:** default 3×3, min 2×2, max 6×6. Compact layout: a single "on until 18:00" line.
-- **Refresh:** every 15 minutes, cached; shows the last known schedule when offline.
-- **Open questions:** feed stability and format differences between operators.
+### More outage sources 📋
+Automatic schedules for more regions, as separate adapters behind the same widget.
+- **Custom JSON URL:** point a tile at any URL that serves a documented JSON format (for example a community mirror or your own script). Needs an optional host permission for that host.
+- **Operator adapters:** added only where the operator or a maintained open-data project publishes a stable, permitted feed. Requests for permission or an API go to the site owners first.
+- **Config:** `source: "json"`, `url`, `group`.
 
 ### Air-raid alerts map 📋 (target 0.5.0)
 An oblast map coloured by current alert status, with the duration of active alerts and an optional browser notification when your pinned regions change.
@@ -131,6 +141,25 @@ Turn the Tasks widget from a plain checklist into a lightweight tracker that liv
 - **Later, optional:** two-way sync with Jira so a Jira issue can appear as a task and a local task can be pushed to a project. This depends on the Jira panel above.
 - **Open questions:** how much workflow customisation is worth the added screen space, and whether several task lists (per project) should share one widget.
 
+### Ambient sounds 📋 (unscheduled)
+A small mixer of background sounds: rain, wind, ocean, city, birds, a café, fireplace, plus white/pink/brown noise. Each has its own volume; a sleep timer fades everything out.
+- **How:** noise-based sounds (white/pink/brown noise, rain, wind, waves) are synthesised with the Web Audio API, so they work offline and need no files. Recorded loops (birds, city, café) come from files you add yourself (kept in IndexedDB like local wallpapers) or from CC0 loops listed with their licences.
+- **Config:** `mix` (sound id → volume), `sleepMinutes`.
+- **Permissions:** none for synthesised sounds and local files.
+- **Limits:** browsers only start audio after a click or key press, so a new tab shows a *Play* button instead of starting by itself. Audio stops when the tab navigates away from VEGA; a player that survives that needs a background context (and extra permissions), which is a separate decision.
+
+### Radio and music player 📋 (unscheduled)
+Station-style playback: lofi and chill internet radio, plus your own songs.
+- **Radio:** stations are internet radio stream URLs (MP3/AAC over HTTP). A short curated list ships with the credit and source of each station, and you can add your own URL. Only streams that allow this kind of listening are listed.
+- **Your music:** audio files you add, stored locally (IndexedDB), as playlists with shuffle, shown as "stations" in the style of a game's in-car radio. Files never leave your machine.
+- **Controls:** play/pause, next, volume, media keys through the Media Session API; keyboard-first (`Space`, `←`/`→`).
+- **Config:** `station`, `playlist`, `volume`.
+- **Permissions:** optional host permission per stream host. Local files need none.
+- **Open questions:** how popular it will be (kept small on purpose), and the same autoplay and tab-lifetime limits as ambient sounds.
+
+### Wallpaper presets 💡 (postponed)
+A picker with ready-made wallpapers. Postponed because it needs content VEGA is allowed to redistribute: original animated loops generated for the project, or links to freely licensed sources with credit. Large files would be hosted as release assets, not in the git history.
+
 ### More integrations 💡
 Ideas that follow the same pattern (token stored locally, optional host permission, one adapter per service): GitLab merge requests and pipelines, Linear issues, Todoist or Microsoft To Do lists, Notion database view, Slack or email unread counts (these need OAuth), Sentry issue counts, uptime/status pages.
 
@@ -165,8 +194,10 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [x] Links
 
 **0.4.0**
-- [ ] Power outages
-- [ ] City search for the weather location (geocoding)
+- [x] Outages widget (Yasno + pasted schedule)
+- [x] City search for the weather location (geocoding)
+- [x] Toolbar menu reuses an open VEGA tab
+- [ ] More outage sources (custom JSON URL, operator adapters)
 
 **0.5.0**
 - [ ] Air-raid alerts map
@@ -186,6 +217,9 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [ ] Countdown
 - [ ] Quick capture
 - [ ] More integrations (GitLab, Linear, Todoist, Notion, ...)
+- [ ] Ambient sounds (rain, wind, city, birds, noise)
+- [ ] Radio and music player (internet radio, local songs)
+- [ ] Wallpaper presets (postponed)
 - [ ] In-page link editor (not a widget, but unlocks per-tile link lists)
 
 ---
