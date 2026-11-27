@@ -414,6 +414,110 @@ describe('app (jsdom)', () => {
     });
   });
 
+  describe('outages widget', () => {
+    const settle = () => new Promise(r => setTimeout(r, 60));
+    const yasno = () => read('tests/fixtures/yasno-sample.json');
+    const regions = [{ id: 25, value: 'Kyiv', dsos: [{ id: 902, name: 'DTEK Kyiv' }] }, { id: 3, value: 'Dnipro', dsos: [{ id: 301, name: 'DnEM' }, { id: 303, name: 'CEK' }] }];
+    // 07:00 in Kyiv on 2026-11-27 (UTC+2), the date of the fixture
+    const T0 = Date.UTC(2026, 10, 27, 5, 0, 0);
+    const withTile = (cfg, id = 'ou1') => { const fx = fixture(); fx.ws[3].items.push({ id, type: 'outage', x: 0, y: 0, w: 4, h: 4, cfg }); fx.active = 3; return fx; };
+    const env = (urls = []) => w => {
+      w.Date.now = () => T0;
+      w.fetch = async u => {
+        u = String(u); urls.push(u);
+        if (u.endsWith('/addresses/v2/regions')) return { ok: true, json: async () => regions };
+        if (u.includes('planned-outages')) return { ok: true, json: async () => JSON.parse(yasno()) };
+        throw new Error('offline');
+      };
+    };
+    const tile = a => a.w.document.querySelector('.tile[data-type="outage"]');
+
+    test('shows the current state and the way back from a Yasno schedule', async () => {
+      const urls = []; const a = await boot(withTile({ source: 'yasno', region: 25, dso: 902, group: '1.1' }), env(urls));
+      try {
+        await settle();
+        const t = tile(a).textContent;
+        assert.match(t, /Power off/); assert.match(t, /back at 09:00, in 2 h/);
+        assert.match(t, /05:30–09:00\s+14:30–19:30/); assert.match(t, /not published yet/);
+        assert.ok(urls.some(u => u.endsWith('/regions/25/dsos/902/planned-outages')));
+        assert.equal(tile(a).querySelectorAll('.ou-bar .seg').length, 5);
+        assert.match(a.w.localStorage.getItem('hud.outage'), /"25\.902\.1\.1"/, 'cached for offline use');
+      } finally { await a.close(); }
+    });
+
+    test('offline: the cached schedule is still shown', async () => {
+      const fx = withTile({ source: 'yasno', region: 25, dso: 902, group: '1.1' });
+      const a = await boot(fx, w => { env()(w); w.localStorage.setItem('hud.outage', JSON.stringify({ '25.902.1.1': { ts: 1, data: { '1.1': JSON.parse(yasno())['1.1'] } } })); w.fetch = async () => { throw new Error('offline'); }; });
+      try { await settle(); assert.match(tile(a).textContent, /Power off/); assert.doesNotMatch(tile(a).textContent, /Paste today/); } finally { await a.close(); }
+    });
+
+    test('an unconfigured tile offers setup; Enter opens the dialog and the list of regions loads', async () => {
+      const urls = []; const a = await boot(withTile({}), env(urls));
+      try {
+        const d = a.w.document; await settle();
+        assert.match(tile(a).textContent, /Set up/);
+        tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true }));
+        a.key('Enter'); await settle();
+        assert.ok(d.querySelector('.mbox'));
+        const selects = d.querySelectorAll('.mbox select');
+        assert.deepEqual([...selects[1].options].map(o => o.textContent), ['Kyiv', 'Dnipro']);
+        assert.deepEqual([...selects[3].options].map(o => o.textContent), ['1.1', '2.1']);
+        selects[3].value = '2.1';
+        [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
+        const cfg = a.saved().ws[3].items.find(i => i.type === 'outage').cfg;
+        assert.deepEqual([cfg.source, cfg.region, cfg.dso, cfg.group], ['yasno', 25, 902, '2.1']);
+        assert.match(tile(a).textContent, /Power (on|off)/);
+      } finally { await a.close(); }
+    });
+
+    test('pasting a schedule saves the parsed times and works without any network', async () => {
+      const a = await boot(withTile({}), w => { w.Date.now = () => T0; w.fetch = async () => { throw new Error('offline'); }; });
+      try {
+        const d = a.w.document; await settle();
+        tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true }));
+        a.key('Enter'); await settle();
+        const src = d.querySelector('.mbox select'); src.value = 'paste'; src.dispatchEvent(new a.w.Event('change'));
+        const ta = d.querySelector('.mbox textarea');
+        ta.value = 'Today\n🔴 02:00 - 06:30\n🔴 15:00 - 19:00\nTomorrow\n🔴 08:00 - 12:00'; ta.dispatchEvent(new a.w.Event('input'));
+        assert.match(d.querySelector('.mbox .ou-cfg:not([hidden]) .note:last-child').textContent, /Found 3 time ranges/);
+        [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
+        const cfg = a.saved().ws[3].items.find(i => i.type === 'outage').cfg;
+        assert.equal(cfg.source, 'paste'); assert.equal(cfg.paste.date, '2026-11-27'); assert.equal(cfg.paste.today.length, 2); assert.equal(cfg.paste.tomorrow.length, 1);
+        const t = tile(a).textContent;
+        assert.match(t, /Power on/); assert.match(t, /next outage 15:00, in 8 h/); assert.match(t, /08:00–12:00/);
+      } finally { await a.close(); }
+    });
+
+    test('nothing found in the pasted text: the dialog stays open', async () => {
+      const a = await boot(withTile({}), env());
+      try {
+        const d = a.w.document; await settle();
+        tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('Enter'); await settle();
+        const src = d.querySelector('.mbox select'); src.value = 'paste'; src.dispatchEvent(new a.w.Event('change'));
+        d.querySelector('.mbox textarea').value = 'no times here';
+        [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click();
+        assert.ok(d.querySelector('.mbox'));
+      } finally { await a.close(); }
+    });
+
+    test('an old pasted schedule asks for a fresh one instead of showing stale data', async () => {
+      const a = await boot(withTile({ source: 'paste', paste: { date: '2026-11-20', today: [{ from: 0, to: 60, type: 'off' }], tomorrow: [] } }), env());
+      try { await settle(); assert.match(tile(a).textContent, /Paste today's schedule/); } finally { await a.close(); }
+    });
+
+    test('the tile menu has Configure… only for widgets that can be configured', async () => {
+      const a = await boot(withTile({ source: 'paste', paste: { date: '2026-11-27', today: [{ from: 0, to: 60, type: 'off' }], tomorrow: [] } }), env());
+      try {
+        const d = a.w.document;
+        tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
+        assert.ok([...d.querySelectorAll('.menu .mi')].some(e => e.textContent.includes('Configure')));
+        a.key('Escape', { key: 'Escape' }); a.key('Digit1');
+        d.querySelector('.tile[data-type="clock"]').dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
+        assert.equal([...d.querySelectorAll('.menu .mi')].some(e => e.textContent.includes('Configure')), false);
+      } finally { await a.close(); }
+    });
+  });
+
   describe('city search for the weather location', () => {
     const settle = () => new Promise(r => setTimeout(r, 40));
     const results = { results: [{ name: 'Lviv', admin1: 'Lviv Oblast', country: 'Ukraine', latitude: 49.8397, longitude: 24.0297 }, { name: 'Lviv', admin1: '', country: 'Elsewhere', latitude: 1.5, longitude: 2.5 }] };
@@ -581,6 +685,115 @@ describe('app (jsdom)', () => {
     assert.equal(root.dataset.theme, 'nord');
     assert.equal(root.style.getPropertyValue('--accent'), '#ff8800');
     dom.window.close();
+  });
+});
+
+/* ───────────── outage schedules (pure logic) ───────────── */
+describe('outage logic', () => {
+  const O = require('../outage.js');
+  const sample = () => JSON.parse(read('tests/fixtures/yasno-sample.json'));
+  const hm = (h, m = 0) => h * 60 + m;
+
+  test('Yasno response becomes full-day slots; unplanned = power on, definite = outage', () => {
+    const r = O.fromYasno(sample(), '1.1');
+    assert.deepEqual(r.days.map(d => d.status), ['known', 'waiting']);
+    const today = r.days[0];
+    assert.equal(today.date, '2026-11-27');
+    assert.equal(today.slots[0].start, 0); assert.equal(today.slots.at(-1).end, 1440);
+    assert.deepEqual(O.intervals(today), [[330, 540], [870, 1170]]);
+    assert.equal(O.fromYasno(sample(), '99.9'), null);
+  });
+
+  test('group names sort numerically', () => {
+    assert.deepEqual(O.yasnoGroups({ '10.1': { today: {} }, '2.1': { today: {} }, '1.2': { today: {} }, junk: 5 }), ['1.2', '2.1', '10.1']);
+  });
+
+  test('status: inside an outage, before one, and after the last one', () => {
+    const days = O.fromYasno(sample(), '1.1').days;       // outages 05:30-09:00 and 14:30-19:30
+    assert.deepEqual(O.status(days, hm(7)), { kind: 'off', endsAt: hm(9), open: false });
+    assert.deepEqual(O.status(days, hm(2)), { kind: 'on', endsAt: 330, open: false });
+    const late = O.status(days, hm(21));
+    assert.equal(late.kind, 'on'); assert.equal(late.open, true);   // tomorrow is not published yet
+    assert.equal(O.status(days, hm(14, 30)).kind, 'off');
+    assert.equal(O.status(days, hm(9)).kind, 'on');                   // the boundary belongs to the next slot
+  });
+
+  test('status: an outage that continues into a published tomorrow is merged', () => {
+    const today = O.dayFromOff('2026-11-27', [[hm(22), 1440]]);
+    const tomorrow = O.dayFromOff('2026-11-28', [[0, hm(3)], [hm(10), hm(12)]]);
+    assert.deepEqual(O.status([today, tomorrow], hm(23)), { kind: 'off', endsAt: 1440 + hm(3), open: false });
+  });
+
+  test('status is unknown without a known schedule', () => {
+    assert.equal(O.status([O.emptyDay('2026-11-27', 'unknown'), O.emptyDay('2026-11-28', 'waiting')], 100).kind, 'unknown');
+  });
+
+  test('dayFromOff merges, sorts and clamps intervals', () => {
+    const d = O.dayFromOff('2026-01-01', [[600, 700], [0, 120], [100, 200], [1300, 2000]]);
+    assert.deepEqual(O.intervals(d), [[0, 200], [600, 700], [1300, 1440]]);
+    assert.equal(O.dayFromOff('2026-01-01', []).slots.length, 1);
+  });
+
+  describe('pasted text', () => {
+    const P = (t, m) => O.parseSchedule(t, m);
+    test('plain ranges with different dashes and separators', () => {
+      const r = P('00:00 - 08:00\n14:00–18:30, 22.00 — 24:00');
+      assert.deepEqual(r.days.today.map(i => [i.from, i.to]), [[0, 480], [840, 1110], [1320, 1440]]);
+      assert.equal(r.found, 3);
+    });
+    test('Ukrainian wording', () => {
+      assert.deepEqual(P('з 06:30 до 10:00 та з 16:00 по 20:00').days.today.map(i => [i.from, i.to]), [[390, 600], [960, 1200]]);
+    });
+    test('"tomorrow" starts a second day, "today" switches back', () => {
+      const r = P('Сьогодні:\n🔴 02:00 - 06:00\nЗавтра:\n🔴 10:00 - 14:00\nСьогодні ще 20:00 - 22:00');
+      assert.deepEqual(r.days.today.map(i => i.from), [120, 1200]);
+      assert.deepEqual(r.days.tomorrow.map(i => i.from), [600]);
+    });
+    test('hints decide the meaning of a line, otherwise the chosen default applies', () => {
+      assert.equal(P('🟢 08:00 - 12:00').days.today[0].type, 'on');
+      assert.equal(P('🔴 08:00 - 12:00').days.today[0].type, 'off');
+      assert.equal(P('08:00 - 12:00').days.today[0].type, 'off');
+      assert.equal(P('08:00 - 12:00', 'on').days.today[0].type, 'on');
+    });
+    test('invalid times are ignored; a range across midnight is split', () => {
+      assert.equal(P('25:00 - 26:00, 10:75 - 11:00, 12:00 - 12:00').found, 0);
+      assert.deepEqual(P('22:00 - 02:00').days.today.map(i => [i.from, i.to]), [[1320, 1440], [0, 120]]);
+    });
+    test('only power-on times: everything else is an outage', () => {
+      const d = O.dayFromParsed('2026-11-27', P('🟢 08:00 - 12:00\n🟢 18:00 - 24:00').days.today);
+      assert.deepEqual(O.intervals(d), [[0, 480], [720, 1080]]);
+    });
+    test('no times at all gives an unknown day', () => {
+      assert.equal(O.dayFromParsed('2026-11-27', P('nothing here').days.today).status, 'unknown');
+    });
+    test('a saved paste rolls over at midnight: tomorrow becomes today, older data is stale', () => {
+      const saved = { date: '2026-11-27', today: [{ from: 0, to: 60, type: 'off' }], tomorrow: [{ from: 600, to: 660, type: 'off' }] };
+      const same = O.fromPasted(saved, '2026-11-27');
+      assert.deepEqual(same.days.map(d => d.status), ['known', 'known']);
+      const next = O.fromPasted(saved, '2026-11-28');
+      assert.deepEqual(O.intervals(next.days[0]), [[600, 660]]);
+      assert.equal(next.days[1].status, 'waiting');
+      const old = O.fromPasted(saved, '2026-12-05');
+      assert.equal(old.stale, true); assert.equal(old.days[0].status, 'unknown');
+    });
+  });
+
+  test('align moves a cached schedule from yesterday so that today is first', () => {
+    const y = O.dayFromOff('2026-11-26', [[0, 60]]), t = O.dayFromOff('2026-11-27', [[600, 700]]);
+    const out = O.align([y, t], '2026-11-27');
+    assert.equal(out[0].date, '2026-11-27'); assert.equal(out[1].status, 'waiting');
+    assert.equal(O.align([y, t], '2026-11-30')[0].status, 'unknown');
+    assert.equal(O.align([t, y], '2026-11-27')[0], t);
+  });
+
+  test('Kyiv time conversion respects the time zone (UTC+2 in winter, +3 in summer)', () => {
+    assert.deepEqual(O.kyivNow(Date.UTC(2026, 0, 15, 22, 30, 5)), { date: '2026-01-16', minutes: 30, seconds: 5 });
+    assert.deepEqual(O.kyivNow(Date.UTC(2026, 6, 15, 21, 30, 0)), { date: '2026-07-16', minutes: 30, seconds: 0 });
+  });
+
+  test('duration and clock formatting', () => {
+    assert.equal(O.duration(135), '2 h 15 min'); assert.equal(O.duration(45), '45 min'); assert.equal(O.duration(120), '2 h');
+    assert.equal(O.clock(1440 + 185), '03:05'); assert.equal(O.clockEnd(1440), '24:00');
   });
 });
 

@@ -351,6 +351,7 @@ function openTileMenu(id, anchor) {
   const act = fn => () => { closeLayer(); fn(); };
   const items = [
     { label: S.tileDuplicate, run: act(() => duplicateTile(id)) },
+    ...(tiles.get(id) && tiles.get(id).api.configure ? [{ label: S.tileConfigure, run: act(() => tiles.get(id).api.configure()) }] : []),
     { label: S.tileResetSize, hint: `${MODULES[it.type].def[0]}×${MODULES[it.type].def[1]}`, run: act(() => resetTileSize(id)) },
     ...state.ws.flatMap((w, i) => i === state.active ? [] : [{ label: S.tileMoveItem(w.name || String(i + 1)), hint: i < 9 ? `Shift+${i + 1}` : '', run: act(() => moveTileToWs(id, i)) }]),
     { label: S.tileDelete, hint: 'X', danger: true, sep: true, run: act(() => removeTile(id)) },
@@ -700,6 +701,158 @@ MODULES.links.render = (body, ctx) => {
   return { refresh: draw, enter: () => { const a = body.querySelector('a.lk'); if (!a) return false; a.focus(); } };
 };
 
+/* ═════════════ outages: when the power is on (Yasno automatically, or a schedule you paste) ═════════════ */
+const OU = VEGA.outage;
+const YASNO = 'https://app.yasno.ua/api/blackout-service/public/shutdowns', YASNO_ORIGIN = 'https://app.yasno.ua/*';
+const OKEY = 'hud.outage';                                      // tiny cache: { "<region>.<dso>.<group>": { ts, data } }
+const outageCache = {
+  read() { try { return JSON.parse(localStorage.getItem(OKEY)) || {}; } catch { return {}; } },
+  write(c) { try { localStorage.setItem(OKEY, JSON.stringify(c)); } catch { /* storage full or blocked */ } },
+};
+
+async function loadYasno(cfg, force) {
+  const cache = outageCache.read(), k = `${cfg.region}.${cfg.dso}.${cfg.group}`, hit = cache[k];
+  if (hit && !force && Date.now() - hit.ts < 15 * 60e3) return { json: hit.data, ts: hit.ts };
+  try {
+    const res = await fetch(`${YASNO}/regions/${cfg.region}/dsos/${cfg.dso}/planned-outages`);
+    if (!res.ok) throw new Error(res.status);
+    const all = await res.json();
+    if (!all[cfg.group]) throw new Error('group');
+    cache[k] = { ts: Date.now(), data: { [cfg.group]: all[cfg.group] } };
+    for (const old of Object.keys(cache).sort((a, b) => cache[b].ts - cache[a].ts).slice(6)) delete cache[old];
+    outageCache.write(cache);
+    return { json: cache[k].data, ts: cache[k].ts };
+  } catch { return hit ? { json: hit.data, ts: hit.ts, stale: true } : null; }   // offline: show the last known schedule
+}
+
+MODULES.outage.render = (body, ctx) => {
+  const it = ctx.it, root = h('div', { class: 'ou' });
+  body.append(root);
+  let remote = null, loading = false, failed = false, dead = false, last = '';
+  const ready = () => it.cfg.source === 'paste' ? !!(it.cfg.paste && it.cfg.paste.date) : it.cfg.source === 'yasno' && !!(it.cfg.region && it.cfg.dso && it.cfg.group);
+
+  const schedule = now => {
+    if (it.cfg.source === 'paste') return OU.fromPasted(it.cfg.paste, now.date);
+    if (!remote) return null;
+    const x = OU.fromYasno(remote.json, it.cfg.group);
+    return x && { ...x, days: OU.align(x.days, now.date), offline: !!remote.stale };   // `stale` is reserved for an old pasted schedule
+  };
+  const rows = d => d.status === 'known' ? (OU.intervals(d).map(([a, b]) => `${OU.clock(a)}–${OU.clockEnd(b)}`).join('   ') || S.outageNone) : d.status === 'waiting' ? S.outageWaiting : '—';
+
+  const draw = force => {
+    const now = OU.kyivNow(Date.now()), sch = ready() ? schedule(now) : null;
+    const key = [now.date, now.minutes, loading, failed, it.cfg.source, it.cfg.group, remote && remote.ts, it.cfg.paste && it.cfg.paste.savedAt, sch && sch.days.map(d => d.status + d.slots.length).join()].join('|');
+    if (!force && key === last) return;                                   // the picture only changes once a minute
+    last = key;
+    ctx.setStatus(ready() ? (it.cfg.source === 'yasno' ? S.outageGroup(it.cfg.group) : S.outagePasted) : '');
+    if (!ready()) return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: S.outageSetupHint }), h('button', { class: 'btn main', onclick: configure }, S.outageSetup)));
+    if (!sch || sch.stale) {
+      const msg = sch && sch.stale ? S.outageStale : failed ? S.outageFail : S.outageLoading;
+      return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: msg }), failed || (sch && sch.stale) ? h('button', { class: 'btn', onclick: sch && sch.stale ? configure : () => load(true) }, sch && sch.stale ? S.outageSetup : S.outageRetry) : null));
+    }
+    const days = sch.days, st = OU.status(days, now.minutes);
+    const away = OU.duration(st.endsAt - now.minutes);
+    const sub = st.kind === 'off' ? (st.open ? S.outageUntilAtLeast(OU.clockEnd(st.endsAt)) : (st.endsAt >= OU.DAY ? S.outageBackTomorrow : S.outageBack)(OU.clock(st.endsAt), away))
+      : st.kind === 'on' ? (st.open ? S.outageNoMore : (st.endsAt >= OU.DAY ? S.outageNextTomorrow : S.outageNext)(OU.clock(st.endsAt), away)) : '';
+    const marker = h('i', { class: 'ou-now' });
+    marker.style.left = now.minutes / OU.DAY * 100 + '%';
+    const bar = h('div', { class: 'ou-bar', role: 'img', 'aria-label': S.outageToday + ': ' + rows(days[0]) },
+      days[0].slots.map(x => { const i = h('i', { class: 'seg ' + x.type }); i.style.flex = String(x.end - x.start); return i; }), marker);
+    const upd = sch.updated && it.cfg.source === 'yasno' ? Math.round((Date.now() - Date.parse(sch.updated)) / 60e3) : null;
+    root.replaceChildren(
+      h('div', { class: 'ou-head' }, h('i', { class: 'ou-dot ' + st.kind }), h('b', { class: 'ou-st', text: S.outage[st.kind] }), sub ? h('span', { class: 'ou-sub', text: sub }) : null),
+      bar,
+      h('div', { class: 'ou-ticks', 'aria-hidden': 'true' }, ['00', '06', '12', '18', '24'].map(t => h('span', { text: t }))),
+      h('div', { class: 'ou-list' },
+        h('div', {}, h('span', { text: S.outageToday }), h('b', { text: rows(days[0]) })),
+        h('div', {}, h('span', { text: S.outageTomorrow }), h('b', { text: rows(days[1]) })),
+        upd !== null && upd >= 0 ? h('div', { class: 'ou-foot' }, S.outageUpdated(OU.duration(upd))) : null));
+  };
+
+  const load = async force => {
+    if (it.cfg.source !== 'yasno' || !ready()) return;
+    loading = true; failed = false; draw(true);
+    const res = await loadYasno(it.cfg, force);
+    if (dead) return;
+    loading = false; remote = res; failed = !res; draw(true);
+  };
+  const configure = () => configureOutage(it, () => { remote = null; save(); load(true); draw(true); });
+
+  draw(true); load(false);
+  const iv = setInterval(() => load(false), 15 * 60e3);
+  return {
+    tick: () => draw(false), refresh: () => load(true), configure,
+    enter: () => { if (!ready()) configure(); else load(true); return false; },
+    destroy() { dead = true; clearInterval(iv); },
+  };
+};
+
+// The dialog that picks the source: Yasno region/operator/group, or pasted text.
+function configureOutage(it, onSaved) {
+  const cfg = it.cfg, now = OU.kyivNow(Date.now());
+  const sel = (label, cls) => h('select', { class: 'fi ' + (cls || ''), 'aria-label': label });
+  const fill = (el, items, cur) => el.replaceChildren(...items.map(([v, t]) => h('option', { value: v, selected: String(v) === String(cur) }, t)));
+  const src = sel(S.outageSource);
+  fill(src, [['yasno', S.outageSrcYasno], ['paste', S.outageSrcPaste]], cfg.source || 'yasno');
+
+  // --- Yasno
+  const regSel = sel(S.outageRegion), dsoSel = sel(S.outageOperator), grpSel = sel(S.outageGroupLabel), ynote = h('div', { class: 'note' });
+  let regions = [];
+  const loadGroups = async () => {
+    if (!regSel.value || !dsoSel.value) return;
+    try { fill(grpSel, OU.yasnoGroups(await (await fetch(`${YASNO}/regions/${regSel.value}/dsos/${dsoSel.value}/planned-outages`)).json()).map(g => [g, g]), cfg.group); ynote.textContent = ''; }
+    catch { ynote.textContent = S.outageRegionsFail; }
+  };
+  const showDsos = () => { const rg = regions.find(x => String(x.id) === regSel.value); fill(dsoSel, (rg ? rg.dsos : []).map(d => [d.id, d.name]), cfg.dso); return loadGroups(); };
+  regSel.addEventListener('change', showDsos); dsoSel.addEventListener('change', loadGroups);
+  const loadRegions = async () => {
+    try {
+      regions = await (await fetch(`${YASNO}/addresses/v2/regions`)).json();
+      fill(regSel, regions.map(x => [x.id, x.value]), cfg.region); ynote.textContent = ''; await showDsos(); allow.hidden = true;
+    } catch { ynote.textContent = S.outageRegionsFail; }
+  };
+  const allow = h('button', { class: 'btn main', type: 'button', onclick: async () => { if (await ensureOrigin(YASNO_ORIGIN)) loadRegions(); else ynote.textContent = S.outageDenied; } }, S.outageLoadRegions);
+  const yasnoPanel = h('div', { class: 'ou-cfg' }, allow, h('label', { class: 'fr' }, h('span', { text: S.outageRegion }), regSel), h('label', { class: 'fr' }, h('span', { text: S.outageOperator }), dsoSel),
+    h('label', { class: 'fr' }, h('span', { text: S.outageGroupLabel }), grpSel), ynote);
+
+  // --- pasted text
+  const ta = h('textarea', { class: 'fi', rows: 7, spellcheck: 'false', placeholder: S.outagePastePlaceholder, 'aria-label': S.outagePasteLabel });
+  ta.value = (cfg.paste && cfg.paste.raw) || '';
+  const meaning = sel(S.outageMeaning); fill(meaning, [['off', S.outageMeaningOff], ['on', S.outageMeaningOn]], (cfg.paste && cfg.paste.meaning) || 'off');
+  const found = h('div', { class: 'note' });
+  const parse = () => OU.parseSchedule(ta.value, meaning.value);
+  const preview = () => {
+    const p = parse(), fmt = list => list.map(i => `${OU.clock(i.from)}–${OU.clockEnd(i.to)}`).join(', ');
+    found.textContent = S.outageFound(p.found, fmt(p.days.today), fmt(p.days.tomorrow));
+  };
+  ta.addEventListener('input', preview); meaning.addEventListener('change', preview);
+  const pastePanel = h('div', { class: 'ou-cfg' }, h('div', { class: 'note', text: S.outagePasteHelp }), ta, h('label', { class: 'fr' }, h('span', { text: S.outageMeaning }), meaning), found);
+
+  const showPanel = () => { yasnoPanel.hidden = src.value !== 'yasno'; pastePanel.hidden = src.value !== 'paste'; };
+  src.addEventListener('change', showPanel); showPanel(); preview();
+
+  const done = () => {
+    if (src.value === 'yasno') {
+      if (!regSel.value || !dsoSel.value || !grpSel.value) return toast(S.outageChooseAll);
+      Object.assign(cfg, { source: 'yasno', region: +regSel.value, dso: +dsoSel.value, group: grpSel.value });
+    } else {
+      const p = parse();
+      if (!p.found) return toast(S.outageFound(0));
+      cfg.source = 'paste';
+      cfg.paste = { date: now.date, today: p.days.today, tomorrow: p.days.tomorrow, savedAt: new Date().toISOString(), raw: ta.value.slice(0, 4000), meaning: meaning.value };
+    }
+    closeLayer(); onSaved();
+  };
+  openModal(S.outageTitle, [h('label', { class: 'fr' }, h('span', { text: S.outageSource }), src), yasnoPanel, pastePanel],
+    [h('button', { class: 'btn', onclick: closeLayer }, S.cancel), h('button', { class: 'btn main', onclick: done }, S.save)]);
+
+  // Load the region list at once when it is allowed already (or on a plain page); otherwise wait for the button.
+  (async () => {
+    const granted = !isExt || !api.permissions || !api.permissions.contains ? true : await api.permissions.contains({ origins: [YASNO_ORIGIN] }).catch(() => false);
+    if (granted) loadRegions();
+  })();
+}
+
 /* ═════════════ fuzzy search ═════════════ */
 function fuzzy(q, s) {
   q = q.toLowerCase(); const t = s.toLowerCase();
@@ -765,6 +918,7 @@ function commands() {
     add(S.cmdDeleteTile, 'X', () => removeTile(focusId));
     add(S.cmdDuplicateTile, '', () => duplicateTile(focusId));
     add(S.cmdResetSize, '', () => resetTileSize(focusId));
+    const fr = tiles.get(focusId); if (fr && fr.api.configure) add(S.cmdConfigureTile, '', () => fr.api.configure());
     add(S.moveTileCmd, '', () => openPalette(S.moveTileTo('')));
     state.ws.forEach((w, i) => { if (i !== state.active) add(S.moveTileTo(w.name || String(i + 1)), i < 9 ? `Shift+${i + 1}` : '', () => moveTileToWs(focusId, i), /move/i); });
   }

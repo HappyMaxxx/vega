@@ -29,7 +29,8 @@
     "sessions"
   ],
   "optional_host_permissions": [
-    "https://geocoding-api.open-meteo.com/*"
+    "https://geocoding-api.open-meteo.com/*",
+    "https://app.yasno.ua/*"
   ],
   "host_permissions": [
     "https://api.open-meteo.com/*"

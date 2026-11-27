@@ -6,7 +6,7 @@ const S = {
   lang: 'en', locale: 'en-GB',
 
   // modules
-  mod: { clock: 'clock', weather: 'weather', timer: 'focus', tasks: 'tasks', notes: 'notes', links: 'links' },
+  mod: { clock: 'clock', weather: 'weather', timer: 'focus', tasks: 'tasks', notes: 'notes', links: 'links', outage: 'outages' },
   addModule: 'Add',
   moduleWord: 'module',
 
@@ -67,6 +67,26 @@ const S = {
   notesPlaceholder: 'notes…', notesLabel: 'Notes',
   linksEmpty: 'No links here. Add some in settings (comma key).',
   linksTabPick: 'Which tab to show', linksAll: 'all',
+
+  // outages
+  tileConfigure: 'Configure…', cmdConfigureTile: 'Configure focused tile',
+  outage: { on: 'Power on', off: 'Power off', maybe: 'Outage possible', unknown: 'No schedule' },
+  outageSetupHint: 'Show when the power is on and when it goes off.', outageSetup: 'Set up',
+  outageLoading: 'Loading…', outageFail: 'Could not load the schedule.', outageRetry: 'Retry',
+  outageBack: (at, d) => `back at ${at}, in ${d}`, outageBackTomorrow: (at, d) => `back tomorrow at ${at}, in ${d}`,
+  outageUntilAtLeast: (at) => `until at least ${at}`,
+  outageNext: (at, d) => `next outage ${at}, in ${d}`, outageNextTomorrow: (at, d) => `next outage tomorrow ${at}, in ${d}`,
+  outageNoMore: 'no more outages planned today',
+  outageToday: 'Today', outageTomorrow: 'Tomorrow', outageNone: 'no outages', outageWaiting: 'not published yet',
+  outageGroup: (g) => `group ${g}`, outagePasted: 'pasted', outageStale: 'Paste today\'s schedule', outageUpdated: (d) => `updated ${d} ago`,
+  outageTitle: 'Outage schedule', outageSource: 'Source', outageSrcYasno: 'Yasno (Kyiv, Dnipro): automatic', outageSrcPaste: 'Paste a schedule (any region)',
+  outageLoadRegions: 'Allow and load regions', outageRegion: 'Region', outageOperator: 'Operator', outageGroupLabel: 'Group (queue)',
+  outageDenied: 'Permission was not granted.', outageRegionsFail: 'Could not load the list. Check your connection.',
+  outagePasteLabel: 'Schedule text', outagePastePlaceholder: 'Paste the text from your bot or the operator site, for example:\nToday\n00:00 - 08:00\n14:00 - 18:30\nTomorrow\n06:00 - 10:00',
+  outageMeaning: 'The times are', outageMeaningOff: 'outages', outageMeaningOn: 'power on',
+  outagePasteHelp: 'Paste today\'s schedule (and tomorrow\'s if you have it). Times are Kyiv time. Lines with "tomorrow" start the next day; 🔴 or 🟢 mark outage or power lines.',
+  outageFound: (n, t, tm) => n ? `Found ${n} time range${n === 1 ? '' : 's'}: ${t}${tm ? `; tomorrow ${tm}` : ''}` : 'No times found yet',
+  outageChooseAll: 'Choose a region, operator and group first.',
 
   // palette
   palettePlaceholder: 'Links, commands, "! g query", "+ task"', paletteLabel: 'Search and commands',
