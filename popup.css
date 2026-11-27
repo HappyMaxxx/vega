@@ -1,0 +1,6 @@
+/* toolbar popup: sized by its content, themed by the same tokens */
+html, body.popup { height: auto; overflow: visible; }
+body.popup { min-width: 210px; }
+.pop { display: grid; gap: 8px; padding: 12px; }
+.pop-t { font-size: 15px; color: var(--hi); }
+.pop .btn { padding: 6px 10px; font-size: 13px; text-align: left; }

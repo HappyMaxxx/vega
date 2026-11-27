@@ -1,0 +1,516 @@
+{
+ "v": 1,
+ "active": 1,
+ "ws": [
+  {
+   "id": "qjzwkvj",
+   "name": "work",
+   "items": [
+    {
+     "id": "yxcx0nc",
+     "type": "clock",
+     "x": 2,
+     "y": 0,
+     "w": 4,
+     "h": 2,
+     "cfg": {}
+    },
+    {
+     "id": "flbab58",
+     "type": "weather",
+     "x": 3,
+     "y": 2,
+     "w": 3,
+     "h": 2,
+     "cfg": {}
+    },
+    {
+     "id": "yevs0hs",
+     "type": "timer",
+     "x": 6,
+     "y": 0,
+     "w": 3,
+     "h": 2,
+     "cfg": {}
+    },
+    {
+     "id": "eufrxh0",
+     "type": "tasks",
+     "x": 9,
+     "y": 0,
+     "w": 3,
+     "h": 5,
+     "cfg": {}
+    },
+    {
+     "id": "yy5db8s",
+     "type": "links",
+     "x": 0,
+     "y": 4,
+     "w": 5,
+     "h": 3,
+     "cfg": {
+      "tab": "dev"
+     }
+    },
+    {
+     "id": "68g92w8",
+     "type": "links",
+     "x": 5,
+     "y": 4,
+     "w": 4,
+     "h": 3,
+     "cfg": {
+      "tab": "other"
+     }
+    },
+    {
+     "id": "emgz07p",
+     "type": "links",
+     "x": 0,
+     "y": 7,
+     "w": 5,
+     "h": 3,
+     "cfg": {
+      "tab": "myself"
+     }
+    },
+    {
+     "id": "7c2g30c",
+     "type": "notes",
+     "x": 5,
+     "y": 7,
+     "w": 7,
+     "h": 3,
+     "cfg": {}
+    },
+    {
+     "id": "egutb3p",
+     "type": "notes",
+     "x": 0,
+     "y": 10,
+     "w": 4,
+     "h": 3,
+     "cfg": {}
+    }
+   ]
+  },
+  {
+   "id": "iq7s3uf",
+   "name": "chill",
+   "items": [
+    {
+     "id": "w1ai5e8",
+     "type": "links",
+     "x": 0,
+     "y": 0,
+     "w": 8,
+     "h": 5,
+     "cfg": {
+      "tab": "chill"
+     }
+    },
+    {
+     "id": "s7nbilf",
+     "type": "clock",
+     "x": 8,
+     "y": 0,
+     "w": 4,
+     "h": 2,
+     "cfg": {}
+    },
+    {
+     "id": "mz5onlv",
+     "type": "weather",
+     "x": 8,
+     "y": 2,
+     "w": 4,
+     "h": 3,
+     "cfg": {}
+    }
+   ]
+  },
+  {
+   "id": "zx15puh",
+   "name": "focus",
+   "items": [
+    {
+     "id": "h4xpduv",
+     "type": "timer",
+     "x": 1,
+     "y": 1,
+     "w": 5,
+     "h": 5,
+     "cfg": {}
+    },
+    {
+     "id": "73mxf4s",
+     "type": "tasks",
+     "x": 6,
+     "y": 1,
+     "w": 5,
+     "h": 5,
+     "cfg": {}
+    }
+   ]
+  },
+  {
+   "id": "tyxp4wr",
+   "name": "4",
+   "items": []
+  }
+ ],
+ "groups": [
+  {
+   "id": "owmiz1h",
+   "tab": "dev",
+   "name": "code",
+   "links": [
+    {
+     "name": "site 1.1",
+     "url": "https://example.com/1/1",
+     "color": "#7daea3"
+    },
+    {
+     "name": "site 1.2",
+     "url": "https://example.com/1/2",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "custom link",
+     "url": "https://example.com/blog",
+     "color": "#ff00ff"
+    }
+   ]
+  },
+  {
+   "id": "qf5oth0",
+   "tab": "dev",
+   "name": "docs",
+   "links": [
+    {
+     "name": "site 2.1",
+     "url": "https://example.com/2/1",
+     "color": "#89b482"
+    },
+    {
+     "name": "site 2.2",
+     "url": "https://example.com/2/2",
+     "color": "#7daea3"
+    },
+    {
+     "name": "site 2.3",
+     "url": "https://example.com/2/3",
+     "color": "#ea6962"
+    },
+    {
+     "name": "site 2.4",
+     "url": "https://example.com/2/4",
+     "color": "#a9b665"
+    },
+    {
+     "name": "site 2.5",
+     "url": "https://example.com/2/5",
+     "color": "#7daea3"
+    }
+   ]
+  },
+  {
+   "id": "sgwzoa8",
+   "tab": "dev",
+   "name": "learn",
+   "links": [
+    {
+     "name": "site 3.1",
+     "url": "https://example.com/3/1",
+     "color": "#e78a4e"
+    }
+   ]
+  },
+  {
+   "id": "p1ek2o4",
+   "tab": "other",
+   "name": "tools",
+   "links": [
+    {
+     "name": "site 4.1",
+     "url": "https://example.com/4/1",
+     "color": "#d4be98"
+    },
+    {
+     "name": "site 4.2",
+     "url": "https://example.com/4/2",
+     "color": "#4285F4"
+    },
+    {
+     "name": "site 4.3",
+     "url": "https://example.com/4/3",
+     "color": "#7daea3"
+    },
+    {
+     "name": "site 4.4",
+     "url": "https://example.com/4/4",
+     "color": "#a9b665"
+    },
+    {
+     "name": "site 4.5",
+     "url": "https://example.com/4/5",
+     "color": "#d3869b"
+    },
+    {
+     "name": "site 4.6",
+     "url": "https://example.com/4/6",
+     "color": "#e78a4e"
+    }
+   ]
+  },
+  {
+   "id": "128cv1p",
+   "tab": "other",
+   "name": "design",
+   "links": [
+    {
+     "name": "site 5.1",
+     "url": "https://example.com/5/1",
+     "color": "#d3869b"
+    },
+    {
+     "name": "site 5.2",
+     "url": "https://example.com/5/2",
+     "color": "#ea6962"
+    },
+    {
+     "name": "site 5.3",
+     "url": "https://example.com/5/3",
+     "color": "#3A74DE"
+    }
+   ]
+  },
+  {
+   "id": "xy2phfb",
+   "tab": "myself",
+   "name": "mail",
+   "links": [
+    {
+     "name": "site 6.1",
+     "url": "https://example.com/6/1",
+     "color": "#ea6962"
+    },
+    {
+     "name": "site 6.2",
+     "url": "https://example.com/6/2",
+     "color": "#7daea3"
+    }
+   ]
+  },
+  {
+   "id": "4cmcrkq",
+   "tab": "myself",
+   "name": "files",
+   "links": [
+    {
+     "name": "site 7.1",
+     "url": "https://example.com/7/1",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "site 7.2",
+     "url": "https://example.com/7/2",
+     "color": "#7daea3"
+    },
+    {
+     "name": "site 7.3",
+     "url": "https://example.com/7/3",
+     "color": "#ea6962"
+    }
+   ]
+  },
+  {
+   "id": "ga5uskp",
+   "tab": "myself",
+   "name": "social",
+   "links": [
+    {
+     "name": "site 8.1",
+     "url": "https://example.com/8/1",
+     "color": "#E4405F"
+    },
+    {
+     "name": "site 8.2",
+     "url": "https://example.com/8/2",
+     "color": "#e0d4bc"
+    },
+    {
+     "name": "site 8.3",
+     "url": "https://example.com/8/3",
+     "color": "#69C9D0"
+    }
+   ]
+  },
+  {
+   "id": "h3czkma",
+   "tab": "chill",
+   "name": "games",
+   "links": [
+    {
+     "name": "site 9.1",
+     "url": "https://example.com/9/1",
+     "color": "#ea6962"
+    },
+    {
+     "name": "site 9.2",
+     "url": "https://example.com/9/2",
+     "color": "#d3869b"
+    },
+    {
+     "name": "site 9.3",
+     "url": "https://example.com/9/3",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "site 9.4",
+     "url": "https://example.com/9/4",
+     "color": "#2077E8"
+    }
+   ]
+  },
+  {
+   "id": "x7snhhj",
+   "tab": "chill",
+   "name": "reading",
+   "links": [
+    {
+     "name": "site 10.1",
+     "url": "https://example.com/10/1",
+     "color": "#a9b665"
+    },
+    {
+     "name": "site 10.2",
+     "url": "https://example.com/10/2",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "site 10.3",
+     "url": "https://example.com/10/3",
+     "color": "#ea6962"
+    },
+    {
+     "name": "site 10.4",
+     "url": "https://example.com/10/4",
+     "color": "#DDC7A1"
+    }
+   ]
+  },
+  {
+   "id": "uof2sy2",
+   "tab": "chill",
+   "name": "extra",
+   "links": [
+    {
+     "name": "site 11.1",
+     "url": "https://example.com/11/1",
+     "color": "#7daea3"
+    },
+    {
+     "name": "site 11.2",
+     "url": "https://example.com/11/2",
+     "color": "#e57373"
+    },
+    {
+     "name": "site 11.3",
+     "url": "https://example.com/11/3",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "site 11.4",
+     "url": "https://example.com/11/4",
+     "color": "#e78a4e"
+    },
+    {
+     "name": "site 11.5",
+     "url": "https://example.com/11/5",
+     "color": "#4caf50"
+    },
+    {
+     "name": "site 11.6",
+     "url": "https://example.com/11/6",
+     "color": "#2196f3"
+    }
+   ]
+  },
+  {
+   "id": "pzlnw7e",
+   "tab": "dev",
+   "name": "extra2",
+   "links": [
+    {
+     "name": "docs home",
+     "url": "https://example.com/docs"
+    }
+   ]
+  }
+ ],
+ "tasks": [
+  {
+   "id": "zdp59se",
+   "text": "buy coffee",
+   "done": false
+  },
+  {
+   "id": "fzuxped",
+   "text": "write report",
+   "done": true
+  },
+  {
+   "id": "4groftk",
+   "text": "review PR #42",
+   "done": false
+  }
+ ],
+ "timer": {
+  "mode": "focus",
+  "running": false,
+  "remaining": 1800,
+  "endsAt": 0
+ },
+ "data": {
+  "7c2g30c": {
+   "text": "Note: check 0.2.0\nline 2"
+  }
+ },
+ "settings": {
+  "engine": "g",
+  "engines": {
+   "g": [
+    "https://google.com/search?q=",
+    "Google"
+   ],
+   "d": [
+    "https://duckduckgo.com/?q=",
+    "DuckDuckGo"
+   ],
+   "y": [
+    "https://youtube.com/results?search_query=",
+    "YouTube"
+   ],
+   "r": [
+    "https://www.reddit.com/search/?q=",
+    "Reddit"
+   ],
+   "gh": [
+    "https://github.com/search?q=",
+    "GitHub"
+   ],
+   "p": [
+    "https://www.pinterest.com/search/pins/?q=",
+    "Pinterest"
+   ]
+  },
+  "place": "Testville",
+  "lat": 50.0,
+  "lon": 30.0,
+  "focusMin": 30,
+  "breakMin": 5,
+  "bg": ""
+ }
+}

@@ -1,0 +1,67 @@
+/* VEGA themes. The only place in the project where literal colours live (plus user link-dot colours).
+   Each theme defines: bg (page), surface (tiles/dialogs), raise (hover/selected), fg, hi, dim, accent, hot,
+   semantic colours, ink colours for text on accent/hot fills, and a shade colour for shadows and scrims.
+   Contrast (WCAG AA) is verified for every theme by tests/smoke.js. */
+
+:root, [data-theme="gruvbox"] {
+  --bg: #1d2021; --surface: #282828; --raise: #3c3836;
+  --fg: #d4be98; --hi: #ddc7a1; --dim: #b1a28b;
+  --accent: #7daea3; --hot: #eb9559;
+  --red: #ea6962; --yellow: #d8a657; --green: #a9b665; --aqua: #89b482; --blue: #7daea3; --purple: #d3869b;
+  --on-accent: #1d2021; --on-hot: #1d2021; --shade: #000000;
+  color-scheme: dark;
+}
+
+[data-theme="tokyo"] {
+  --bg: #16161e; --surface: #1a1b26; --raise: #292e42;
+  --fg: #c0caf5; --hi: #e0e6ff; --dim: #8f98c4;
+  --accent: #7aa2f7; --hot: #ff9e64;
+  --red: #f7768e; --yellow: #e0af68; --green: #9ece6a; --aqua: #73daca; --blue: #7aa2f7; --purple: #bb9af7;
+  --on-accent: #16161e; --on-hot: #16161e; --shade: #000000;
+  color-scheme: dark;
+}
+
+[data-theme="mocha"] {
+  --bg: #11111b; --surface: #1e1e2e; --raise: #313244;
+  --fg: #cdd6f4; --hi: #e8edff; --dim: #9ca2ba;
+  --accent: #89b4fa; --hot: #fab387;
+  --red: #f38ba8; --yellow: #f9e2af; --green: #a6e3a1; --aqua: #94e2d5; --blue: #89b4fa; --purple: #cba6f7;
+  --on-accent: #11111b; --on-hot: #11111b; --shade: #000000;
+  color-scheme: dark;
+}
+
+[data-theme="nord"] {
+  --bg: #2e3440; --surface: #3b4252; --raise: #434c5e;
+  --fg: #d8dee9; --hi: #eceff4; --dim: #b6bfd2;
+  --accent: #94c8d8; --hot: #f0b090;
+  --red: #e07a85; --yellow: #ebcb8b; --green: #a3be8c; --aqua: #8fbcbb; --blue: #81a1c1; --purple: #b48ead;
+  --on-accent: #2e3440; --on-hot: #2e3440; --shade: #0b0e14;
+  color-scheme: dark;
+}
+
+[data-theme="rose"] {
+  --bg: #191724; --surface: #1f1d2e; --raise: #26233a;
+  --fg: #e0def4; --hi: #f4f0ff; --dim: #9893b5;
+  --accent: #c4a7e7; --hot: #f6c177;
+  --red: #eb6f92; --yellow: #f6c177; --green: #8fcf9a; --aqua: #9ccfd8; --blue: #7aa8c8; --purple: #c4a7e7;
+  --on-accent: #191724; --on-hot: #191724; --shade: #000000;
+  color-scheme: dark;
+}
+
+[data-theme="paper"] {
+  --bg: #e9e4d8; --surface: #f6f2e8; --raise: #e4ddcc;
+  --fg: #3c3836; --hi: #1d2021; --dim: #62584f;
+  --accent: #076678; --hot: #af3a03;
+  --red: #9d0006; --yellow: #8f5e00; --green: #4f6a0a; --aqua: #3b7452; --blue: #076678; --purple: #8f3f71;
+  --on-accent: #f6f2e8; --on-hot: #f6f2e8; --shade: #3c3836;
+  color-scheme: light;
+}
+
+[data-theme="arc"] {
+  --bg: #060e1f; --surface: #0b1a33; --raise: #12284a;
+  --fg: #cfe6f5; --hi: #eaf7ff; --dim: #8fa9c0;
+  --accent: #35e0ff; --hot: #ffc247;
+  --red: #ff7a7a; --yellow: #ffc247; --green: #5be3a1; --aqua: #35e0ff; --blue: #5aa9ff; --purple: #a78bfa;
+  --on-accent: #060e1f; --on-hot: #060e1f; --shade: #000000;
+  color-scheme: dark;
+}

@@ -1,0 +1,6 @@
+*.zip
+node_modules/
+# personal data must never be committed
+*.local.json
+my-config*.json
+.env

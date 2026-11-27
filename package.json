@@ -1,0 +1,11 @@
+{
+  "name": "vega-dev",
+  "private": true,
+  "description": "Dev-only tooling for VEGA tests. The extension itself has no build step and no runtime dependencies.",
+  "scripts": {
+    "test": "node tests/smoke.js"
+  },
+  "devDependencies": {
+    "jsdom": "^26.0.0"
+  }
+}

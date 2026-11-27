@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Home</title>
+  <link rel="icon" type="image/png" href="icons/icon-32.png">
+  <link rel="stylesheet" href="themes.css">
+  <link rel="stylesheet" href="style.css">
+  <script src="theme-boot.js"></script>
+</head>
+<body>
+  <div id="bgm" aria-hidden="true"></div>
+  <svg class="defs" aria-hidden="true" focusable="false">
+    <filter id="vega-sharpen" color-interpolation-filters="sRGB">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="0.8" result="soft"/>
+      <feComposite in="SourceGraphic" in2="soft" operator="arithmetic" k1="0" k2="1.7" k3="-0.7" k4="0"/>
+    </filter>
+  </svg>
+  <div id="app">
+    <main id="grid"><div id="field" class="no-anim"><div id="ph" hidden></div></div></main>
+    <footer id="bar">
+      <nav id="wsbar" aria-label="Workspaces"></nav>
+      <span id="mode"></span>
+      <span id="tinfo"></span>
+      <span id="hint"><kbd>/</kbd> search <kbd>?</kbd> keys</span>
+    </footer>
+  </div>
+  <div id="toast" hidden></div>
+  <script src="strings.js"></script>
+  <script src="grid.js"></script>
+  <script src="state.js"></script>
+  <script src="bgstore.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
