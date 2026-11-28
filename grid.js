@@ -13,6 +13,10 @@ const META = {
   notes:   { def: [4, 3], min: [2, 2], max: [12, 12] },
   links:   { def: [5, 3], min: [2, 1], max: [12, 12] },
   outage:  { def: [3, 3], min: [2, 2], max: [12, 8] },
+  ambient:   { def: [3, 3], min: [2, 2], max: [8, 8] },
+  rates:     { def: [3, 2], min: [2, 1], max: [8, 8] },
+  countdown: { def: [3, 2], min: [2, 1], max: [8, 8] },
+  worldclock:{ def: [4, 2], min: [2, 1], max: [8, 8] },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));

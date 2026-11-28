@@ -617,7 +617,7 @@ describe('app (jsdom)', () => {
         tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
         assert.ok([...d.querySelectorAll('.menu .mi')].some(e => e.textContent.includes(S.tileConfigure)));
         a.key('Escape', { key: 'Escape' }); a.key('Digit1');
-        d.querySelector('.tile[data-type="clock"]').dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
+        d.querySelector('.tile[data-type="timer"]').dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
         assert.equal([...d.querySelectorAll('.menu .mi')].some(e => e.textContent.includes(S.tileConfigure)), false);
       } finally { await a.close(); }
     });
@@ -1063,5 +1063,462 @@ describe('release', () => {
     const app = read('app.js');
     assert.ok(/e\.code/.test(app));
     assert.equal(/e\.key\s*===\s*'[a-z]'/.test(app), false, 'letter hotkeys must not use e.key');
+  });
+});
+
+/* ───────────── 0.5.0 widgets: clock styles, links settings, world clocks, countdown, rates, ambient sounds ───────────── */
+describe('widget helpers (pure)', () => {
+  const Wd = require('../widgets.js');
+
+  test('clock settings: defaults keep the old look, bad values fall back', () => {
+    assert.deepEqual(Wd.clockCfg(undefined), { name: '', style: 'standard', align: 'left', valign: 'middle', weight: 'regular', date: 'long', hour12: false, seconds: true, progress: true });
+    const c = Wd.clockCfg({ style: 'nope', align: 'up', hour12: 1, seconds: false, name: '  Home  ' });
+    assert.equal(c.style, 'standard'); assert.equal(c.align, 'left'); assert.equal(c.hour12, true); assert.equal(c.seconds, false); assert.equal(c.name, 'Home');
+  });
+
+  test('clock formats: 12-hour, words, binary, analog angles', () => {
+    assert.deepEqual(Wd.clockParts(new Date(2026, 0, 1, 15, 5, 9), true), { hh: '3', mm: '05', ss: '09', ampm: 'PM' });
+    assert.deepEqual(Wd.clockParts(new Date(2026, 0, 1, 0, 5, 9), true), { hh: '12', mm: '05', ss: '09', ampm: 'AM' });
+    assert.equal(Wd.clockParts(new Date(2026, 0, 1, 7, 5, 9), false).hh, '07');
+    assert.equal(Wd.timeWords(9, 15), 'quarter past nine'); assert.equal(Wd.timeWords(9, 40), 'twenty to ten'); assert.equal(Wd.timeWords(23, 58), 'midnight');
+    assert.equal(Wd.timeWords(12, 1), 'noon'); assert.equal(Wd.timeWords(3, 0), 'three o\u2019clock'); assert.equal(Wd.timeWords(15, 30), 'half past three');
+    assert.deepEqual(Wd.bcd(['1', '9']), [[0, 0, 0, 1], [1, 0, 0, 1]]);
+    assert.deepEqual(Wd.analogAngles(new Date(2026, 0, 1, 3, 0, 0)), { hour: 90, minute: 0, second: 0 });
+    assert.equal(Wd.dateText(new Date(2026, 10, 28), 'none', 'en-GB'), '');
+    assert.match(Wd.dateText(new Date(2026, 10, 28), 'numeric', 'en-GB'), /28\/11\/2026/);
+  });
+
+  test('time zones: validation, wall time and difference', () => {
+    assert.equal(Wd.validZone('Asia/Tokyo'), true); assert.equal(Wd.validZone('Mars/Base'), false); assert.equal(Wd.validZone(''), false);
+    const d = new Date(Date.UTC(2026, 10, 28, 22, 30, 0));
+    const t = Wd.zoneNow('Asia/Tokyo', d);
+    assert.equal(t.hour, 7); assert.equal(t.minute, 30); assert.equal(t.offsetMin, 540);
+    assert.equal(t.diffMin, 540 - (-d.getTimezoneOffset()));
+    assert.equal(Wd.zoneNow('UTC', d).hour, 22);
+    assert.equal(Wd.diffText(0), 'same time'); assert.equal(Wd.diffText(180), '+3h'); assert.equal(Wd.diffText(-330), '\u22125h 30m');
+    assert.equal(Wd.zoneLabel('America/New_York'), 'New York');
+    const c = Wd.worldCfg({ zones: [{ tz: 'Bad/Zone' }, { tz: 'UTC', label: 'x'.repeat(50) }] });
+    assert.equal(c.zones.length, 1); assert.equal(c.zones[0].label.length, 24);
+    assert.equal(Wd.worldCfg({}).zones.length, 3, 'a fresh tile starts with three zones');
+    assert.equal(Wd.worldCfg({ zones: [] }).zones.length, 0, 'removing every zone is respected');
+  });
+
+  test('countdown: all-day, timed, yearly roll-over, past, invalid input', () => {
+    const now = new Date(2026, 10, 28, 10, 0, 0);
+    assert.equal(Wd.countdown({ date: '2026-12-25', time: '', yearly: false }, now).days, 27);
+    assert.equal(Wd.countdown({ date: '2026-11-28', time: '', yearly: false }, now).today, true);
+    const past = Wd.countdown({ date: '2026-11-25', time: '', yearly: false }, now); assert.equal(past.past, true); assert.equal(past.absDays, 3);
+    const timed = Wd.countdown({ date: '2026-11-28', time: '12:30', yearly: false }, now); assert.deepEqual([timed.d, timed.h, timed.m, timed.past], [0, 2, 30, false]);
+    assert.equal(Wd.countdown({ date: '2026-11-28', time: '09:00', yearly: false }, now).past, true);
+    assert.equal(Wd.countdown({ date: '2020-03-01', time: '', yearly: true }, now).target.getFullYear(), 2027, 'a yearly date that has passed this year moves to next year');
+    assert.equal(Wd.countdown({ date: '2020-12-01', time: '', yearly: true }, now).target.getFullYear(), 2026);
+    assert.equal(Wd.parseLocal('2026-02-30', ''), null); assert.equal(Wd.parseLocal('soon', ''), null); assert.equal(Wd.parseLocal('2026-02-01', '25:00'), null);
+    const c = Wd.countdownCfg({ events: [{ name: 'A', date: '2026-12-25' }, { name: 'B', date: 'bad' }, null] });
+    assert.equal(c.events.length, 1); assert.ok(c.events[0].id);
+    const order = Wd.sortEvents([{ name: 'late', date: '2027-01-01' }, { name: 'gone', date: '2026-01-01' }, { name: 'soon', date: '2026-12-01' }], now, 'soonest').map(x => x.e.name);
+    assert.deepEqual(order, ['soon', 'late', 'gone'], 'upcoming first, past events last');
+  });
+
+  test('rates: parse the NBU feed, cross rates, settings', () => {
+    const feed = [{ r030: 840, txt: 'x', rate: 41.5, cc: 'USD', exchangedate: '28.11.2026' }, { r030: 978, txt: 'y', rate: 48.3, cc: 'EUR', exchangedate: '28.11.2026' }, { cc: 'bad', rate: 1 }, { cc: 'ZZZ', rate: 0 }];
+    const p = Wd.parseNbu(feed);
+    assert.equal(p.date, '2026-11-28'); assert.deepEqual(Object.keys(p.rates).sort(), ['EUR', 'UAH', 'USD']);
+    assert.equal(Wd.parseNbu([]), null); assert.equal(Wd.parseNbu({}), null);
+    assert.equal(Wd.convert(p.rates, 100, 'USD', 'UAH'), 4150);
+    assert.ok(Math.abs(Wd.convert(p.rates, 1, 'EUR', 'USD') - 48.3 / 41.5) < 1e-9);
+    assert.equal(Wd.convert(p.rates, 1, 'XXX', 'UAH'), null);
+    const c = Wd.ratesCfg({ base: 'usd', codes: ['eur', 'EUR', 'x', ' pln '], amount: -5, decimals: 9 });
+    assert.deepEqual([c.base, c.codes, c.amount, c.decimals], ['USD', ['EUR', 'PLN'], 1, 6]);
+    assert.deepEqual(Wd.ratesCfg({}).codes, ['USD', 'EUR']); assert.equal(Wd.ratesCfg({}).base, 'UAH');
+    assert.equal(Wd.nbuDate(new Date(2026, 10, 7)), '20261107');
+    const m = Wd.parseMono([{ currencyCodeA: 840, currencyCodeB: 980, rateBuy: 45, rateSell: 45.44 }, { currencyCodeA: 826, currencyCodeB: 980, rateCross: 59.78 }, { currencyCodeA: 978, currencyCodeB: 840, rateBuy: 1.09, rateSell: 1.1 }, { currencyCodeA: 1, currencyCodeB: 980, rateBuy: 1, rateSell: 2 }]);
+    assert.deepEqual(m, { USD: { buy: 45, sell: 45.44 }, GBP: { cross: 59.78 } }); assert.equal(Wd.parseMono({}), null);
+    assert.deepEqual(Wd.parseTicker({ lastPrice: '59498.46', bidPrice: '59498.46', askPrice: '59498.47', priceChangePercent: '-3.540' }), { last: 59498.46, bid: 59498.46, ask: 59498.47, change: -3.54 });
+    assert.equal(Wd.parseTicker({ code: -1121 }), null);
+    const rc = Wd.ratesCfg({ source: 'crypto', coins: ['btc', 'bad coin', 'ETH', 'btc'], quote: 'EUR' });
+    assert.deepEqual([rc.source, rc.coins, rc.quote], ['crypto', ['BTC', 'ETH'], 'EUR']); assert.deepEqual([Wd.ratesCfg({ source: 'x', quote: 'DOGE' }).source, Wd.ratesCfg({ quote: 'DOGE' }).quote], ['nbu', 'USDT']);
+  });
+
+  test('links settings: defaults match the old look, bad values fall back, extra keys survive', () => {
+    const c = Wd.linksCfg({ tab: 'dev', layout: 'wow', cols: 99, icons: 'letter', color: 'purple', keep: 1 });
+    assert.deepEqual([c.layout, c.cols, c.icons, c.color, c.tab, c.keep, c.headers, c.newTab], ['columns', 4, 'letter', 'purple', 'dev', 1, true, false]);
+    assert.equal(Wd.linksCfg({}).groups, undefined);
+  });
+
+  test('ambient settings: built-in and custom sounds are validated', () => {
+    const c = Wd.ambientCfg({ sounds: ['rain', 'bogus', 'rain', 'fire', 'cabc12'], levels: { rain: 5, fire: -1, cabc12: 0.4 }, master: 2, sleepMin: 7,
+      custom: [{ id: 'cabc12', name: 'Cafe', url: 'https://example.com/cafe.mp3' }, { name: 'Bad', url: 'http://plain.example/x.mp3' }, { name: '', url: 'https://example.com/y.mp3' }, { name: 'Js', url: 'javascript:alert(1)' }] });
+    assert.deepEqual(c.sounds, ['rain', 'fire', 'cabc12']); assert.equal(c.levels.rain, 1); assert.equal(c.levels.fire, 0); assert.equal(c.levels.cabc12, 0.4);
+    assert.equal(c.master, 1); assert.equal(c.sleepMin, 0); assert.deepEqual(c.custom, [{ id: 'cabc12', name: 'Cafe', url: 'https://example.com/cafe.mp3' }]);
+    assert.equal(Wd.ambientCfg({}).levels.rain, 0.6); assert.deepEqual(Wd.ambientCfg({}).sounds, ['rain', 'thunder', 'wind', 'ocean', 'fire', 'brown']);
+    assert.equal(Wd.ambientCfg({ custom: Array.from({ length: 9 }, (_, i) => ({ name: 'n' + i, url: 'https://e.example/' + i })) }).custom.length, Wd.CUSTOM_MAX);
+    for (const [id, v] of Object.entries(Wd.STREAMS)) assert.match(v.url, /^https:\/\/archive\.org\/download\/[\w.-]+\/[^\s]+\.(ogg|mp3)$/, id);
+    assert.equal(Wd.noiseData('brown', 256).length, 256);
+  });
+
+  test('ambient engine: nothing starts before play, silent streams are never requested, errors are reported (fake audio)', async () => {
+    const log = [], els = [];
+    class Param { constructor() { this.value = 0; } }
+    class Node { constructor() { this.gain = new Param(); this.loop = false; } connect() {} start() { log.push('start'); } stop() {} }
+    class Ctx {
+      constructor() { this.state = 'running'; this.sampleRate = 8000; this.destination = {}; log.push('ctx'); }
+      createBuffer(ch, n) { const a = new Float32Array(n); return { length: n, getChannelData: () => a }; }
+      createBufferSource() { return new Node(); } createGain() { return new Node(); }
+      async resume() { log.push('resume'); } async suspend() { log.push('suspend'); } close() { log.push('close'); }
+    }
+    class El {
+      constructor() { this.paused = true; this.volume = 1; this.handlers = {}; els.push(this); }
+      addEventListener(t, f) { this.handlers[t] = f; } removeAttribute() { this.src = ''; } load() {}
+      play() { this.paused = false; return Promise.resolve(); } pause() { this.paused = true; }
+    }
+    const e = Wd.createAmbient(Ctx, () => new El());
+    const changed = []; e.onChange = id => changed.push(id);
+    e.setSources([{ id: 'cabc12', url: 'https://example.com/cafe.mp3' }]);
+    e.setLevels({ rain: 0.5, fire: 0, cabc12: 0.25, brown: 0.5 });
+    assert.equal(log.length, 0); assert.equal(els.length, 0, 'nothing is created before play()');
+    await e.play();
+    assert.equal(e.playing, true); assert.equal(log.filter(x => x === 'ctx').length, 1);
+    assert.deepEqual(els.map(x => x.src), [Wd.STREAMS.rain.url, 'https://example.com/cafe.mp3'], 'only sounds above zero are requested');
+    assert.deepEqual(els.map(x => x.volume), [0.4, 0.2]); assert.ok(els.every(x => x.loop === true && !x.paused));
+    e.setLevel('fire', 0.5); assert.equal(els.length, 3); assert.equal(els[2].src, Wd.STREAMS.fire.url);
+    e.setLevel('rain', 0); assert.equal(els[0].paused, true);
+    e.setMaster(0.5); assert.equal(els[2].volume, 0.25);
+    els[1].handlers.error(); assert.equal(e.failed('cabc12'), true); assert.deepEqual(changed, ['cabc12']);
+    els[1].handlers.playing(); assert.equal(e.failed('cabc12'), false);
+    await e.pause(); assert.equal(e.playing, false); assert.ok(els.every(x => x.paused)); assert.ok(log.includes('suspend'));
+    e.destroy(); assert.ok(log.includes('close')); assert.ok(els.every(x => x.src === ''));
+    const quiet = Wd.createAmbient(undefined, () => new El()); quiet.setLevels({ rain: 1 }); await quiet.play(); assert.equal(quiet.playing, true, 'streams still play without Web Audio');
+  });
+});
+
+describe('widgets in the app (jsdom)', () => {
+  const settle = (ms = 40) => new Promise(r => setTimeout(r, ms));
+  const withTiles = (...tiles) => { const fx = fixture(); tiles.forEach((t, i) => fx.ws[3].items.push({ id: 'n' + i, x: 0, y: i * 2, w: 5, h: 3, cfg: {}, ...t })); fx.active = 3; return fx; };
+  const tile = (a, type) => a.w.document.querySelector(`.tile[data-type="${type}"]`);
+  const menuConfigure = (a, type) => {
+    tile(a, type).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
+    [...a.w.document.querySelectorAll('.menu .mi')].find(e => e.textContent.includes(S.tileConfigure)).click();
+  };
+  const ctl = (a, label) => a.w.document.querySelector(`.mbox [aria-label="${label}"]`);
+  const set = (el, v) => { el.value = v; el.dispatchEvent(new el.ownerDocument.defaultView.Event('change', { bubbles: true })); };
+  const chk = (a, text) => [...a.w.document.querySelectorAll('.mbox .fr.chk')].find(r => r.textContent.startsWith(text)).querySelector('input');
+  const saveBtn = a => a.w.document.querySelector('.mf .btn.main');
+  const quiet = w => { w.fetch = async () => { throw new Error('offline'); }; };
+
+  test('every new tile type renders with default settings and is offered by the command bar', async () => {
+    const a = await boot(withTiles({ type: 'worldclock' }, { type: 'countdown' }, { type: 'rates' }, { type: 'ambient' }), quiet);
+    try {
+      await settle();
+      for (const t of ['worldclock', 'countdown', 'rates', 'ambient']) assert.ok(tile(a, t), t);
+      assert.equal(a.w.document.querySelectorAll('.tile').length, 4);
+      for (const t of a.w.document.querySelectorAll('.tile')) assert.doesNotMatch(t.textContent, /null|undefined|NaN/, t.dataset.type);
+      assert.deepEqual(['worldclock', 'countdown', 'rates', 'ambient'].map(t => tile(a, t).querySelector('.tt').textContent), ['world clocks', 'countdown', 'rates', 'sounds']);
+    } finally { await a.close(); }
+  });
+
+  test('clock styles: each one draws, 12-hour and hidden seconds are respected', async () => {
+    const a = await boot(withTiles({ type: 'clock', cfg: { style: 'analog' } }, { type: 'clock', cfg: { style: 'binary', seconds: false } }, { type: 'clock', cfg: { style: 'words', date: 'none' } },
+      { type: 'clock', cfg: { style: 'stacked', hour12: true } }, { type: 'clock', cfg: { style: 'large', seconds: false, progress: false, align: 'center', valign: 'bottom' } }), quiet);
+    try {
+      const [an, bi, wd, st, lg] = [...a.w.document.querySelectorAll('.tile[data-type="clock"]')].slice(-5);
+      assert.ok(an.querySelector('svg.ck-a .ck-hh') && an.querySelector('.ck-sh'));
+      assert.equal(bi.querySelectorAll('.ck-bc').length, 4); assert.equal(bi.querySelectorAll('.ck-bc i').length, 16);
+      assert.match(wd.querySelector('.ck-w').textContent, /o\u2019clock|past|to|noon|midnight/); assert.equal(wd.querySelector('.ck-d'), null);
+      assert.match(st.querySelector('.ck-h').textContent, /^\d{1,2}(AM|PM)$/);
+      assert.equal(lg.querySelector('.ck-s'), null); assert.equal(lg.querySelector('.ck-p'), null);
+      assert.equal(lg.querySelector('.ck').dataset.align, 'center'); assert.equal(lg.querySelector('.ck').dataset.valign, 'bottom');
+      assert.match(lg.querySelector('.ck-t').textContent, /^\d\d:\d\d$/);
+    } finally { await a.close(); }
+  });
+
+  test('clock: the Configure dialog saves style and alignment into the tile only, and the title can be renamed', async () => {
+    const a = await boot(withTiles({ type: 'clock' }), quiet);
+    try {
+      const mine = a.w.document.querySelectorAll('.tile[data-type="clock"]'); const el = mine[mine.length - 1];
+      el.dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyM');
+      [...a.w.document.querySelectorAll('.menu .mi')].find(e => e.textContent.includes(S.tileConfigure)).click();
+      set(ctl(a, 'Style'), 'analog'); set(ctl(a, 'Horizontal alignment'), 'right'); set(ctl(a, 'Tile name'), 'Desk');
+      saveBtn(a).click();
+      assert.ok(el.querySelector('svg.ck-a')); assert.equal(el.querySelector('.tt').textContent, 'Desk');
+      const s = a.saved(), saved = s.ws[3].items.find(i => i.id === 'n0');
+      assert.equal(saved.cfg.style, 'analog'); assert.equal(saved.cfg.align, 'right'); assert.equal(saved.cfg.name, 'Desk');
+      assert.deepEqual(s.ws[0].items.find(i => i.type === 'clock').cfg, {}, 'other clocks are untouched');
+    } finally { await a.close(); }
+  });
+
+  test('world clocks: default zones, your own time, and a custom list from Configure', async () => {
+    const a = await boot(withTiles({ type: 'worldclock' }), quiet);
+    try {
+      const t = tile(a, 'worldclock');
+      const names = [...t.querySelectorAll('.wc-n')].map(x => x.textContent);
+      assert.deepEqual(names, ['Your time', 'New York', 'London', 'Tokyo']);
+      assert.match(t.querySelector('.wc-t').textContent, /^\d\d:\d\d$/);
+      menuConfigure(a, 'worldclock');
+      const rows = a.w.document.querySelectorAll('.mbox .led-r'); assert.equal(rows.length, 3);
+      rows[0].querySelector('.led-r > div > input').value = 'Mars/Base';
+      saveBtn(a).click();
+      assert.ok(a.w.document.querySelector('.mbox'), 'an invalid zone keeps the dialog open');
+      rows[0].querySelector('.btn').click();                                  // remove it
+      a.w.document.querySelector('.led-w > .btn').click();                    // add a row
+      const fresh = [...a.w.document.querySelectorAll('.mbox .led-r')].pop().querySelector('input');
+      fresh.value = 'Australia/Sydney';
+      chk(a, 'Show your own time first').checked = false;
+      saveBtn(a).click();
+      assert.equal(a.w.document.querySelector('.mbox'), null);
+      assert.deepEqual([...tile(a, 'worldclock').querySelectorAll('.wc-n')].map(x => x.textContent), ['London', 'Tokyo', 'Sydney']);
+    } finally { await a.close(); }
+  });
+
+  test('countdown: shows days left, today, passed; Configure adds and removes events', async () => {
+    const day = n => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const a = await boot(withTiles({ type: 'countdown', h: 4, cfg: { events: [{ id: 'a', name: 'Trip', date: day(10) }, { id: 'b', name: 'Birthday', date: day(0) }, { id: 'c', name: 'Old', date: day(-3) }] } }), quiet);
+    try {
+      const t = tile(a, 'countdown');
+      const rows = [...t.querySelectorAll('.cd-r')].map(r => r.textContent.replace(/\s+/g, ' ').trim());
+      assert.deepEqual(rows, ['BirthdayToday', 'Trip10 days', 'Old3 days ago']);
+      menuConfigure(a, 'countdown');
+      const del = a.w.document.querySelectorAll('.mbox .led-r .btn'); del[del.length - 1].click();               // drop "Old"
+      a.w.document.querySelector('.led-w > .btn').click();
+      const last = [...a.w.document.querySelectorAll('.mbox .led-r')].pop();
+      last.querySelector('input').value = 'Half-baked';
+      saveBtn(a).click();
+      assert.ok(a.w.document.querySelector('.mbox'), 'an event without a date is rejected');
+      last.querySelector('input[type="date"]').value = day(400);
+      saveBtn(a).click();
+      assert.equal(a.w.document.querySelector('.mbox'), null);
+      assert.deepEqual([...tile(a, 'countdown').querySelectorAll('.cd-n')].map(x => x.textContent), ['Birthday', 'Trip', 'Half-baked']);
+      assert.equal(a.saved().ws[3].items.find(i => i.id === 'n0').cfg.events.length, 3);
+    } finally { await a.close(); }
+  });
+
+  describe('rates', () => {
+    const feed = (usd, eur, date) => JSON.stringify([{ r030: 840, txt: 'Dollar', rate: usd, cc: 'USD', exchangedate: date }, { r030: 978, txt: 'Euro', rate: eur, cc: 'EUR', exchangedate: date }, { r030: 985, txt: 'Zloty', rate: 11.5, cc: 'PLN', exchangedate: date }]);
+    const net = (urls, fail) => w => { w.fetch = async u => { u = String(u); urls.push(u); if (fail) throw new Error('offline'); return { ok: true, json: async () => JSON.parse(u.includes('date=') ? feed(41, 48, '27.11.2026') : feed(41.5, 48.3, '28.11.2026')) }; }; };
+
+    test('loads the NBU feed, shows the change since the previous day and caches it', async () => {
+      const urls = []; const a = await boot(withTiles({ type: 'rates' }), net(urls));
+      try {
+        await settle(80);
+        const t = tile(a, 'rates');
+        const rows = [...t.querySelectorAll('.fx-r')].map(r => r.textContent.replace(/\s+/g, ' ').trim());
+        assert.match(rows[0], /^USD\s*41\.50 UAH\s*▲ 1\.22%$/); assert.match(rows[1], /^EUR\s*48\.30 UAH\s*▲ 0\.62%$/);
+        assert.ok(urls.some(u => u.startsWith('https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json')));
+        assert.match(t.textContent, /NBU 2026-11-28/);
+        assert.doesNotMatch(t.textContent, /null|undefined|NaN/);
+        assert.equal(JSON.parse(a.w.localStorage.getItem('hud.rates')).nbu.today.rates.USD, 41.5);
+      } finally { await a.close(); }
+    });
+
+    test('with no network it falls back to the cache; with neither it offers Retry', async () => {
+      const cache = { ts: Date.now() - 3 * 3600e3, today: { date: '2026-11-28', rates: { UAH: 1, USD: 41.5, EUR: 48.3 } }, prev: null };
+      const a = await boot(withTiles({ type: 'rates' }), w => { net([], true)(w); w.localStorage.setItem('hud.rates', JSON.stringify(cache)); });
+      try { await settle(80); const t = tile(a, 'rates'); assert.match(t.textContent, /USD\s*41\.50/); assert.match(t.querySelector('.ts').textContent, /offline/); } finally { await a.close(); }
+      const b = await boot(withTiles({ type: 'rates' }), net([], true));
+      try { await settle(80); assert.match(tile(b, 'rates').textContent, /Could not load the rates/); assert.ok([...tile(b, 'rates').querySelectorAll('.btn')].some(x => x.textContent === 'Retry')); } finally { await b.close(); }
+    });
+
+    test('monobank: buy and sell columns for the chosen currencies', async () => {
+      const urls = [];
+      const a = await boot(withTiles({ type: 'rates', cfg: { source: 'mono', codes: ['USD', 'GBP'] } }), w => { w.fetch = async u => { urls.push(String(u)); return { ok: true, json: async () => [{ currencyCodeA: 840, currencyCodeB: 980, rateBuy: 45, rateSell: 45.44 }, { currencyCodeA: 826, currencyCodeB: 980, rateCross: 59.78 }] }; }; });
+      try {
+        await settle(80);
+        const t = tile(a, 'rates');
+        assert.deepEqual([...t.querySelectorAll('.fx-h span')].map(x => x.textContent), ['', 'Buy', 'Sell', '']);
+        const rows = [...t.querySelectorAll('.fx-r:not(.fx-h)')].map(r => r.textContent.replace(/\s+/g, ' ').trim());
+        assert.equal(rows[0], 'USD45.0045.44'); assert.equal(rows[1], 'GBP59.7859.78');
+        assert.ok(urls.includes('https://api.monobank.ua/bank/currency')); assert.match(t.querySelector('.ts').textContent, /monobank/);
+        assert.equal(JSON.parse(a.w.localStorage.getItem('hud.rates')).mono.rows.USD.sell, 45.44);
+      } finally { await a.close(); }
+    });
+
+    test('crypto: bid and ask from Binance, 24-hour change, and a coin that does not exist shows a dash', async () => {
+      const urls = [];
+      const a = await boot(withTiles({ type: 'rates', cfg: { source: 'crypto', coins: ['BTC', 'NOPE'], quote: 'USDT', decimals: 2 } }), w => { w.fetch = async u => { u = String(u); urls.push(u); return u.endsWith('BTCUSDT') ? { ok: true, json: async () => ({ lastPrice: '59498.46', bidPrice: '59498.46', askPrice: '59498.47', priceChangePercent: '-3.540' }) } : { ok: false, status: 400, json: async () => ({}) }; }; });
+      try {
+        await settle(80);
+        const rows = [...tile(a, 'rates').querySelectorAll('.fx-r:not(.fx-h)')].map(r => r.textContent.replace(/\s+/g, ' ').trim());
+        assert.equal(rows[0], 'BTC59,498.4659,498.47▼ 3.54%'); assert.equal(rows[1], 'NOPE——');
+        assert.ok(urls.includes('https://data-api.binance.vision/api/v3/ticker/24hr?symbol=BTCUSDT'));
+      } finally { await a.close(); }
+    });
+
+    test('Configure: switching the source shows its own fields', async () => {
+      const a = await boot(withTiles({ type: 'rates' }), net([]));
+      try {
+        await settle(80); menuConfigure(a, 'rates');
+        const panels = () => [...a.w.document.querySelectorAll('.mbox .fx-p')].filter(p => !p.hidden).map(p => p.textContent.slice(0, 12));
+        assert.ok(panels().length >= 2);
+        set(ctl(a, 'Source'), 'crypto');
+        assert.ok(a.w.document.querySelector('.mbox [aria-label="Quote currency"]').closest('.fx-p').hidden === false);
+        [...a.w.document.querySelectorAll('.mbox .fx-p .fx-code')].filter(i => !i.closest('.fx-p').hidden)[0].value = 'sol';
+        saveBtn(a).click(); await settle(80);
+        const cfg = a.saved().ws[3].items.find(i => i.id === 'n0').cfg;
+        assert.equal(cfg.source, 'crypto'); assert.deepEqual(cfg.coins, ['SOL', 'ETH']);
+      } finally { await a.close(); }
+    });
+
+    test('Configure: another base currency, amount, decimals, add and remove currencies; unknown codes are refused', async () => {
+      const a = await boot(withTiles({ type: 'rates' }), net([]));
+      try {
+        await settle(80);
+        menuConfigure(a, 'rates');
+        set(ctl(a, 'Show prices in'), 'EUR'); set(ctl(a, 'Amount of each currency'), '100'); set(ctl(a, 'Decimal places'), '0');
+        const del = a.w.document.querySelectorAll('.mbox .led-r .btn'); del[1].click();                   // drop EUR from the list
+        a.w.document.querySelector('.led-w > .btn').click();
+        const codes = a.w.document.querySelectorAll('.mbox .fx-p:not([hidden]) .fx-code'); codes[codes.length - 1].value = 'xyz';
+        saveBtn(a).click();
+        assert.ok(a.w.document.querySelector('.mbox'), 'a code the bank does not publish is refused');
+        codes[codes.length - 1].value = 'pln'; saveBtn(a).click(); await settle(80);
+        assert.equal(a.w.document.querySelector('.mbox'), null);
+        const rows = [...tile(a, 'rates').querySelectorAll('.fx-r')].map(r => r.textContent.replace(/\s+/g, ' ').trim());
+        assert.match(rows[0], /^100 USD\s*86 EUR/); assert.match(rows[1], /^100 PLN\s*24 EUR/);
+        assert.deepEqual(a.saved().ws[3].items.find(i => i.id === 'n0').cfg.codes, ['USD', 'PLN']);
+      } finally { await a.close(); }
+    });
+  });
+
+  describe('ambient sounds', () => {
+    const fake = (ctxs, els) => w => {
+      quiet(w);
+      class P { constructor() { this.value = 0; } }
+      class N { constructor() { this.gain = new P(); } connect() {} start() {} stop() {} }
+      w.AudioContext = class { constructor() { ctxs.push(this); this.state = 'running'; this.sampleRate = 8000; this.destination = {}; }
+        createBuffer(c, n) { const x = new Float32Array(n); return { length: n, getChannelData: () => x }; } createBufferSource() { return new N(); } createGain() { return new N(); }
+        async resume() { this.state = 'running'; } async suspend() { this.state = 'suspended'; } close() { this.state = 'closed'; } };
+      w.Audio = class { constructor() { this.paused = true; this.volume = 1; this.src = ''; els.push(this); } addEventListener() {} removeAttribute() { this.src = ''; } load() {} play() { this.paused = false; return Promise.resolve(); } pause() { this.paused = true; } };
+    };
+
+    test('plays on click, streams only what is turned up, keeps playing across workspaces, remembers levels, stops when the tile is deleted', async () => {
+      const ctxs = [], els = []; const a = await boot(withTiles({ type: 'ambient' }), fake(ctxs, els));
+      try {
+        const t = () => tile(a, 'ambient');
+        assert.equal(ctxs.length + els.length, 0, 'no audio and no network before the first click');
+        assert.deepEqual([...t().querySelectorAll('.am-n')].map(x => x.textContent), ['Rain', 'Thunderstorm', 'Wind in the woods', 'Ocean', 'Fireplace', 'Brown noise']);
+        t().querySelector('.am-go').click(); await settle();
+        assert.equal(els.length, 1, 'only the sound above zero is streamed'); assert.match(els[0].src, /^https:\/\/archive\.org\/download\/naturesounds/); assert.equal(els[0].paused, false);
+        assert.equal(t().querySelector('.am-go').textContent, 'Pause');
+        a.key('Digit1'); a.key('Digit4');
+        assert.equal(els.length, 1, 'redrawing the tile does not restart the stream'); assert.equal(els[0].paused, false); assert.equal(t().querySelector('.am-go').textContent, 'Pause');
+        const slider = t().querySelector('input[aria-label="Ocean volume"]'); slider.value = '35'; slider.dispatchEvent(new a.w.Event('input', { bubbles: true })); slider.dispatchEvent(new a.w.Event('change', { bubbles: true }));
+        assert.equal(els.length, 2, 'turning a sound up while playing starts it'); assert.equal(els[1].volume, 0.35 * 0.8);
+        assert.equal(a.saved().ws[3].items.find(i => i.id === 'n0').cfg.levels.ocean, 0.35);
+        t().querySelector('.am-go').click(); await settle(); assert.ok(els.every(x => x.paused));
+        t().querySelector('.am-go').click(); await settle(); assert.equal(els[0].paused, false);
+        tile(a, 'ambient').dispatchEvent(new a.w.Event('pointerdown', { bubbles: true })); a.key('KeyX');
+        await new Promise(r => setTimeout(r, 1100)); assert.ok(els.every(x => x.paused && x.src === ''), 'a deleted tile must not keep playing');
+      } finally { await a.close(); }
+    });
+
+    test('Configure: choose sounds, add your own stream (https only), sleep timer and "play with the focus timer"', async () => {
+      const ctxs = [], els = []; const a = await boot(withTiles({ type: 'ambient' }), fake(ctxs, els));
+      try {
+        menuConfigure(a, 'ambient');
+        chk(a, 'Rain').checked = false; chk(a, 'Birdsong').checked = true; chk(a, 'Play while').checked = true;
+        set(ctl(a, 'Sleep timer'), '30');
+        a.w.document.querySelector('.led-w > .btn').click();
+        const row = [...a.w.document.querySelectorAll('.mbox .led-r')].pop();
+        const [n, u] = row.querySelectorAll('input'); n.value = 'Cafe'; u.value = 'http://insecure.example/cafe.mp3';
+        saveBtn(a).click(); assert.ok(a.w.document.querySelector('.mbox'), 'a non-https address is refused');
+        u.value = 'https://example.com/cafe.mp3'; saveBtn(a).click();
+        assert.equal(a.w.document.querySelector('.mbox'), null);
+        assert.deepEqual([...tile(a, 'ambient').querySelectorAll('.am-n')].map(x => x.textContent), ['Thunderstorm', 'Wind in the woods', 'Ocean', 'Birdsong', 'Fireplace', 'Brown noise', 'Cafe']);
+        const cfg = a.saved().ws[3].items.find(i => i.id === 'n0').cfg;
+        assert.equal(cfg.sleepMin, 30); assert.equal(cfg.withTimer, true); assert.ok(!cfg.sounds.includes('rain') && cfg.sounds.includes('forest'));
+        assert.equal(cfg.custom.length, 1); assert.equal(cfg.custom[0].url, 'https://example.com/cafe.mp3'); assert.ok(cfg.sounds.includes(cfg.custom[0].id));
+        a.key('KeyZ');
+      } finally { await a.close(); }
+    });
+  });
+
+  test('links: layout, columns, markers, hidden headings, groups to show, new-tab links, and adding a link', async () => {
+    const a = await boot(withTiles({ type: 'links', cfg: { tab: 'dev' } }), quiet);
+    try {
+      const t = tile(a, 'links'); const before = t.querySelectorAll('a.lk').length;
+      assert.equal(t.querySelector('.lg').dataset.layout, 'columns'); assert.ok(before > 0);
+      menuConfigure(a, 'links');
+      set(ctl(a, 'Layout'), 'chips'); set(ctl(a, 'Columns'), '3'); set(ctl(a, 'Link marker'), 'letter'); set(ctl(a, 'Heading colour'), 'blue');
+      a.w.document.querySelectorAll('.mbox input[type="checkbox"]').forEach(c => { if (!c.getAttribute('aria-label')) c.checked = true; });   // show headings off (last two plain boxes)
+      const first = a.w.document.querySelector('.lc-g input'); first.checked = true;
+      saveBtn(a).click();
+      const lg = tile(a, 'links').querySelector('.lg');
+      assert.equal(lg.dataset.layout, 'chips'); assert.equal(lg.dataset.icons, 'letter'); assert.equal(lg.style.gridTemplateColumns, 'repeat(3, minmax(0, 1fr))');
+      assert.equal(lg.style.getPropertyValue('--lgh'), 'var(--blue)'); assert.ok(lg.querySelector('i.lt'));
+      assert.equal(lg.querySelectorAll('.lgg').length, 1, 'only the chosen group is shown');
+      const c = a.saved().ws[3].items.find(i => i.id === 'n0').cfg;
+      assert.equal(c.tab, 'dev', 'the old tab setting is kept'); assert.equal(c.layout, 'chips'); assert.equal(c.groups.length, 1);
+    } finally { await a.close(); }
+  });
+
+  test('links: quick add puts a new link into the chosen group; bad input is refused', async () => {
+    const a = await boot(withTiles({ type: 'links' }), quiet);
+    try {
+      const count = () => a.saved().groups[0].links.length;
+      const n0 = count();
+      menuConfigure(a, 'links');
+      set(ctl(a, 'Name'), 'Example'); set(ctl(a, 'Address (https://…)'), 'javascript:alert(1)');
+      [...a.w.document.querySelectorAll('.mbox .btn')].find(b => b.textContent === 'Add').click();
+      assert.equal(count(), n0, 'a non-http address is refused');
+      set(ctl(a, 'Address (https://…)'), 'https://example.com/');
+      [...a.w.document.querySelectorAll('.mbox .btn')].find(b => b.textContent === 'Add').click();
+      assert.equal(count(), n0 + 1);
+      assert.ok([...tile(a, 'links').querySelectorAll('a.lk')].some(x => x.textContent === 'Example' && x.getAttribute('href') === 'https://example.com/'));
+    } finally { await a.close(); }
+  });
+});
+
+describe('0.5.0 release hygiene', () => {
+  test('the rates hosts are optional, never required', () => {
+    const m = JSON.parse(read('manifest.json'));
+    for (const h of ['https://bank.gov.ua/*', 'https://api.monobank.ua/*', 'https://data-api.binance.vision/*']) {
+      assert.ok(m.optional_host_permissions.includes(h), h);
+      assert.equal((m.host_permissions || []).includes(h), false, h);
+    }
+  });
+  test('the UI is English only: no Cyrillic in strings, pages or widget helpers', () => {
+    for (const f of ['strings.js', 'widgets.js', 'index.html', 'popup.html', 'options.html', 'popup.js', 'options.js']) assert.equal(/[\u0400-\u04FF]/.test(read(f)), false, f);
+  });
+  test('widgets.js is DOM-free and every script is listed in index.html before app.js', () => {
+    assert.equal(/\bdocument\.|\bwindow\./.test(read('widgets.js').replace(/\/\*[\s\S]*?\*\//g, '')), false);
+    const html = read('index.html'); assert.ok(html.indexOf('widgets.js') > 0 && html.indexOf('widgets.js') < html.indexOf('app.js'));
+  });
+  test('every module type has a title, size limits, and a render function', () => {
+    for (const t of Object.keys(grid.META)) assert.ok(S.mod[t], 'title for ' + t);
+    for (const t of ['clock', 'worldclock', 'countdown', 'rates', 'ambient']) assert.ok(new RegExp(`MODULES\\.${t}\\.render`).test(read('app.js')), t);
+  });
+});
+
+describe('workspace tabs: rename in place', () => {
+  const tab = (a, i) => a.w.document.querySelector(`#wsbar .wsb[data-ws="${i}"]`);
+  const names = a => [...a.w.document.querySelectorAll('#wsbar .wsb[data-ws]')].map(b => b.textContent);
+  const dbl = (a, i) => tab(a, i).dispatchEvent(new a.w.MouseEvent('dblclick', { bubbles: true }));
+  const type = (a, v, code) => { const inp = a.w.document.querySelector('#wsbar input.wsi'); if (v !== null) inp.value = v; inp.dispatchEvent(new a.w.KeyboardEvent('keydown', { code, key: code, bubbles: true })); };
+
+  test('double-click turns the name into a field; Enter saves it, hotkeys stay quiet while typing', async () => {
+    const a = await boot(fixture());
+    try {
+      a.key('Digit1');
+      const before = names(a); dbl(a, 1);
+      const inp = a.w.document.querySelector('#wsbar input.wsi');
+      assert.ok(inp); assert.equal(a.w.document.activeElement, inp);
+      type(a, 'Reading list', 'KeyQ');
+      assert.equal(a.saved().active, 0, 'typing Q or digits does not trigger hotkeys');
+      type(a, 'Reading list', 'Enter');
+      assert.equal(a.w.document.querySelector('#wsbar input.wsi'), null);
+      assert.equal(a.saved().ws[1].name, 'Reading list'); assert.deepEqual(names(a).map((n, i) => i === 1 ? n : n), names(a));
+      assert.match(names(a)[1], /Reading list/); assert.equal(names(a)[0], before[0]);
+    } finally { await a.close(); }
+  });
+
+  test('Escape cancels, an emptied name keeps just the number, and F2 renames the current workspace', async () => {
+    const a = await boot(fixture());
+    try {
+      const orig = a.saved().ws[0].name;
+      dbl(a, 0); type(a, 'zzz', 'Escape');
+      assert.equal(a.saved().ws[0].name, orig);
+      a.key('Digit1'); a.key('F2'); assert.ok(a.w.document.querySelector('#wsbar input.wsi'));
+      type(a, '   ', 'Enter');
+      assert.equal(a.saved().ws[0].name, ''); assert.equal(names(a)[0], '1');
+      dbl(a, 0); type(a, 'x'.repeat(40), 'Enter'); assert.equal(a.saved().ws[0].name.length, 20);
+    } finally { await a.close(); }
   });
 });

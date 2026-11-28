@@ -6,7 +6,7 @@ const S = {
   lang: 'en', locale: 'en-GB',
 
   // modules
-  mod: { clock: 'clock', weather: 'weather', timer: 'focus', tasks: 'tasks', notes: 'notes', links: 'links', outage: 'outages' },
+  mod: { clock: 'clock', weather: 'weather', timer: 'focus', tasks: 'tasks', notes: 'notes', links: 'links', outage: 'outages', ambient: 'sounds', rates: 'rates', countdown: 'countdown', worldclock: 'world clocks' },
   addModule: 'Add',
   moduleWord: 'module',
 
@@ -35,7 +35,7 @@ const S = {
   wsLabel: 'Workspaces', wsTitle: (n) => `Workspace ${n}`, wsNewTitle: 'New workspace',
   wsDefaultName: 'new',
   wsCreated: 'New workspace. Press A to add a module.',
-  wsRenamePrompt: 'Workspace name',
+  wsRenamePrompt: 'Workspace name', wsRenameHint: 'double-click to rename',
   wsNeedOne: 'At least one workspace is required',
   wsDeleteConfirm: (name) => `Delete workspace "${name}" and its tiles?`,
   wsEmptyTitle: 'Nothing here yet',
@@ -192,6 +192,7 @@ const S = {
     [['a'], 'Add a module'],
     [['x', 'z'], 'Delete the focused tile, undo (up to 20 steps)'],
     [['1 – 9'], 'Switch workspace'],
+    [['F2'], 'Rename the current workspace (or double-click its tab)'],
     [['Space'], 'Start or pause the timer when its tile is focused'],
     [[','], 'Settings, themes, links, export and import'],
     [['Esc'], 'Close a dialog or leave a mode'],
@@ -231,6 +232,66 @@ const S = {
   focusNote: 'Works by re-opening the new tab once, so it may flicker briefly. Hotkeys then work immediately.',
   popupOpen: 'Open VEGA', popupSettings: 'Settings',
   setTheme: 'Theme', setAccent: 'Accent colour', accentAuto: 'Theme colour', accentReset: 'Reset accent',
+  // widget settings (shared)
+  cf: {
+    configure: (t) => `Configure ${t}`, name: 'Tile name', namePh: 'Default title', save: 'Save', add: 'Add', remove: 'Remove',
+    left: 'Left', center: 'Centre', right: 'Right', top: 'Top', middle: 'Middle', bottom: 'Bottom',
+    horizontal: 'Horizontal alignment', vertical: 'Vertical alignment', on: 'On', off: 'Off',
+  },
+  // clock
+  ck: {
+    style: 'Style', styles: { standard: 'Standard', large: 'Large', minimal: 'Minimal (time only)', stacked: 'Stacked', analog: 'Analog', binary: 'Binary', words: 'Words' },
+    weight: 'Font weight', weights: { light: 'Light', regular: 'Regular', bold: 'Bold' },
+    date: 'Date', dates: { long: 'Long (Friday 28 November)', short: 'Short (Fri 28 Nov)', numeric: 'Numeric (28/11/2025)', none: 'Hidden' },
+    hour12: '12-hour time (AM/PM)', seconds: 'Show seconds', progress: 'Show the day progress bar',
+  },
+  // world clocks
+  wc: {
+    empty: 'No time zones yet. Add some in Configure.', zones: 'Time zones', zonePh: 'e.g. Asia/Tokyo', labelPh: 'Label (optional)',
+    badZone: (z) => `"${z}" is not a time zone name. Use the Area/City form, e.g. Europe/London.`, max: 'Eight zones at most.',
+    offsets: 'Show the difference from your time', local: 'Show your own time first', hour12: '12-hour time (AM/PM)', seconds: 'Show seconds',
+    yourTime: 'Your time', tomorrow: 'tomorrow', yesterday: 'yesterday',
+  },
+  // countdown
+  cd: {
+    empty: 'Nothing to count down to yet. Add an event in Configure.', events: 'Events', eventName: 'Name', eventDate: 'Date', eventTime: 'Time (optional)', yearly: 'Every year',
+    detail: 'Detail', details: { days: 'Days only', full: 'Days, hours, minutes' }, hidePast: 'Hide events that have passed',
+    order: 'Order', orders: { soonest: 'Soonest first', manual: 'As listed' }, badEvent: 'Give every event a name and a valid date.', max: 'Twelve events at most.',
+    today: 'today', inDays: (n) => n === 1 ? 'tomorrow' : `in ${n} days`, daysUnit: (n) => n === 1 ? 'day' : 'days', passed: (n) => n === 1 ? 'yesterday' : `${n} days ago`,
+    left: (d, h, m) => `${d}d ${h}h ${m}m`, leftShort: (h, m, s) => `${h}h ${m}m ${s}s`, passedTimed: 'passed',
+  },
+  // currency rates
+  fx: {
+    allow: 'Allow access to the rates source', denied: 'Permission not granted.', setupHint: 'Exchange rates and crypto prices. Choose a source to start.', setup: 'Set up',
+    loading: 'Loading…', fail: 'Could not load the rates.', retry: 'Retry', offline: 'offline', asOf: (d) => `rates of ${d}`, source: 'Source',
+    src: { nbu: 'NBU', mono: 'monobank', crypto: 'Binance' },
+    srcLong: { nbu: 'National Bank of Ukraine (official rate)', mono: 'monobank (buy / sell)', crypto: 'Crypto: Binance (buy / sell)' },
+    base: 'Show prices in', codes: 'Currencies', codePh: 'e.g. USD', amount: 'Amount of each currency', decimals: 'Decimal places', change: 'Show the change (previous day, or 24 hours for crypto)',
+    badCode: (c) => `"${c}" is not available from this source.`, max: 'Eight currencies at most.', empty: 'Nothing to show yet. Add currencies in Configure.', pickHint: 'Three-letter code, e.g. USD, EUR, PLN, GBP.',
+    buy: 'Buy', sell: 'Sell', buyHint: 'The price the bank or exchange pays you', sellHint: 'The price you pay', unit: (u) => `in ${u}`,
+    monoNote: 'Buy and sell prices against the hryvnia, as shown on the bank\'s board. Updated at most every five minutes.',
+    coins: 'Coins', coinPh: 'e.g. BTC', coinHint: 'Ticker symbols such as BTC, ETH, SOL, TON. Buy is the best bid, sell is the best ask.', quote: 'Quote currency',
+  },
+  // ambient sounds
+  am: {
+    play: 'Play', pause: 'Pause', master: 'Volume', sleepIn: (m) => `Stops in ${m} min`, sleep: 'Sleep timer', sleepOff: 'Off', sleepOpt: (m) => `${m} minutes`,
+    sounds: 'Sounds in this tile', withTimer: 'Play while the focus timer is running', empty: 'No sounds selected. Pick some in Configure.', options: 'Options',
+    names: { rain: 'Rain', thunder: 'Thunderstorm', wind: 'Wind in the woods', ocean: 'Ocean', stream: 'Stream and birds', forest: 'Birdsong', fire: 'Fireplace', white: 'White noise', pink: 'Pink noise', brown: 'Brown noise' },
+    credit: { rain: 'Real recording, CC0, archive.org', thunder: 'Real recording, public domain, archive.org', wind: 'Real recording, CC0, archive.org', ocean: 'Real recording, CC0, archive.org', stream: 'Real recording, CC0, archive.org', forest: 'Real recording, CC0, archive.org', fire: 'Real recording, CC0, archive.org', white: 'Generated in your browser', pink: 'Generated in your browser', brown: 'Generated in your browser' },
+    blocked: 'Press Play: the browser starts audio only after a key press or click.', level: (n) => `${n} volume`, loadFail: 'Could not load this sound. Check your connection.',
+    streamNote: 'Real recordings are streamed from archive.org (public domain or CC0) only while a sound is playing. The three noises are generated in your browser and work offline.',
+    custom: 'Your own sounds', customNote: 'Any https link to an audio file or an internet radio stream. It loops; radio streams simply keep playing.', customName: 'Name', customUrl: 'https://… address',
+    badCustom: 'Give every sound a name and an address that starts with https://',
+  },
+  // links settings
+  lc: {
+    groups: 'Groups to show', groupsAuto: 'Follow the tab filter (all groups when no tab is set)', layout: 'Layout', layouts: { columns: 'Columns', list: 'One column', chips: 'Chips (compact)' },
+    cols: 'Columns', colsAuto: 'Automatic', icons: 'Link marker', iconsOpt: { dot: 'Coloured dot', letter: 'First letter', none: 'None' },
+    size: 'Text size', sizes: { small: 'Small', normal: 'Normal', large: 'Large' }, color: 'Heading colour', colorAuto: 'Theme default',
+    colors: { accent: 'Accent', green: 'Green', aqua: 'Aqua', blue: 'Blue', purple: 'Purple', yellow: 'Yellow', hot: 'Highlight', red: 'Red' },
+    headers: 'Show group names', newTab: 'Open links in a new tab', quickAdd: 'Add a link', quickGroup: 'Group', quickName: 'Name', quickUrl: 'Address (https://…)',
+    quickBad: 'Enter a name and an address that starts with https://', quickDone: 'Link added',
+  },
   setLinkTheme: 'Use theme colours for link dots',
   themes: { gruvbox: 'Gruvbox Material', tokyo: 'Tokyo Night', mocha: 'Catppuccin Mocha', nord: 'Nord', rose: 'Rosé Pine', paper: 'Paper (light)', arc: 'Arc Reactor' },
 };

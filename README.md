@@ -7,7 +7,7 @@
 **Visual Everyday Grid Assistant**
 
 A keyboard-first tiling start page for Firefox and Chrome.<br>
-Clock, weather, focus timer, tasks, notes and links on a grid you rearrange without touching the mouse.
+Clock, weather, focus timer, tasks, notes, links, world clocks, countdowns, currency and crypto rates and ambient sounds on a grid you rearrange without touching the mouse.
 
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
 ![Manifest V3](https://img.shields.io/badge/manifest-V3-informational)
@@ -33,7 +33,7 @@ A new tab is the page you see a hundred times a day. VEGA makes it calm, fast an
 
 | | |
 | --- | --- |
-| **Widgets** | Clock, weather, focus timer, tasks, notes, link groups, power outage schedule. Each adapts its layout to the size you give it. See [docs/WIDGETS.md](docs/WIDGETS.md). |
+| **Widgets** | Clock (7 styles), weather, focus timer, tasks, notes, link groups, power outage schedule, world clocks, countdown, currency rates, ambient sounds. Each adapts its layout to the size you give it and has its own settings. See [docs/WIDGETS.md](docs/WIDGETS.md). |
 | **Workspaces** | Up to nine boards (`1`–`9`), i3-style, each with its own layout. Send a tile to another workspace with `Shift`+`1`–`9`, the tile menu, the command bar, or by dragging it onto the workspace button. |
 | **Command bar** | `/` or `Ctrl+K`. Fuzzy search over your links and commands. `! g query` searches a specific engine, `+ buy milk` adds a task. Typing in the wrong layout is detected. |
 | **Tile menu** | Hover a tile, or press `M`: delete, duplicate, move to a workspace, reset size. |
@@ -127,12 +127,15 @@ Firefox puts the cursor in the address bar on a new tab, so shortcuts do nothing
 
 ## Privacy and permissions
 
-VEGA collects nothing. Data stays in your browser.
+VEGA collects nothing. Data stays in your browser. The ambient sounds widget streams recordings from archive.org only while a sound is playing; the rates widget contacts the source you choose. Nothing is contacted otherwise.
 
 | Permission | Required | Used for |
 | --- | --- | --- |
 | `https://api.open-meteo.com/*` | yes | The weather tile. Sends only the coordinates you set. |
 | `https://geocoding-api.open-meteo.com/*` | optional | Finding a city by name in Settings. Asked the first time you search. |
+| `https://bank.gov.ua/*` | optional | The rates widget (National Bank of Ukraine exchange rates). Asked when you set it up. |
+| `https://api.monobank.ua/*` | optional | The rates widget, monobank buy/sell prices. Asked when you choose that source. |
+| `https://data-api.binance.vision/*` | optional | The rates widget, crypto prices (Binance public market data). Asked when you choose that source. |
 | `https://bezsvitla.com.ua/*` | optional | The outages widget, universal Ukrainian schedule & address lookup source. Asked when you configure it. |
 | `https://app.yasno.ua/*` | optional | The outages widget, Yasno source. Asked when you choose it. |
 | `tabs`, `bookmarks`, `history` | optional | Searching them from the command bar. Asked when you enable it. |
@@ -190,8 +193,9 @@ Design rules: vanilla HTML/CSS/JS only, no inline scripts, hotkeys by `event.cod
 See the checklist in [docs/WIDGETS.md](docs/WIDGETS.md#checklist) and the [changelog](CHANGELOG.md).
 
 - **0.4** Power outage schedule widget (shipped), more automatic sources as open data allows.
-- **0.5** Air-raid alerts map and an offline threat ETA calculator.
-- **Ideas** ambient sounds and a radio/music player.
+- **0.5** Clock styles and alignment, per-tile link settings, world clocks, countdown, currency rates, ambient sounds (shipped).
+- **0.6** Air-raid alerts map and an offline threat ETA calculator.
+- **Ideas** a radio/music player, recorded sound loops.
 - **Later** GitHub panel (pull requests, reviews, CI), calendar (ICS) and Google Calendar/Tasks, Jira panel and Jira-style tasks with a board view, RSS, bookmarks and history widgets, an in-page link editor, optional AI in the command bar (your own key, stored locally), browser sync, packaging scripts, English/Ukrainian UI switch.
 
 ## License

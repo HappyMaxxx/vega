@@ -1,11 +1,30 @@
 # Changelog
 
+## 0.5.0
+
+Existing data is kept: every new setting is optional and the defaults look exactly like before.
+
+### Added
+- **Rename workspaces in place.** Double-click a workspace tab (or press `F2`) and type, like a sheet tab. `Enter` saves, `Esc` cancels.
+- **Clock styles.** *Configure…* on a clock tile: Standard, Large, Minimal, Stacked, Analog, Binary or Words, with left/centre/right and top/middle/bottom alignment, font weight, date format, 12/24-hour time, seconds and the day-progress bar. Each clock has its own settings.
+- **Links settings per tile.** Layout (columns, one column, chips), number of columns, alignment, marker (dot, first letter, none), text size, heading colour, group names on/off, open in a new tab, and a hand-picked set of groups. The same dialog can add a link to a group.
+- **World clocks.** Several time zones on one tile with the difference from your time. Add and remove zones, rename them, choose 12/24-hour time.
+- **Countdown.** Days, or days/hours/minutes, until your dates. Yearly events, optional time, sorting, hide past events.
+- **Rates.** Three sources per tile: official National Bank of Ukraine rates (with the change since the previous day), monobank **buy / sell** prices, and **crypto** (Binance best bid / ask and 24-hour change). Choose the currencies or coins, the base or quote currency, the amount and the decimals. Works from a cache when offline.
+- **Ambient sounds.** Real recordings of rain, thunderstorm, wind in the woods, ocean, stream and birds, birdsong and a fireplace (public domain / CC0, streamed from archive.org only while playing), plus white, pink and brown noise generated in the browser. One slider each; add your own sounds by link (an audio file or a radio stream). Sleep timer with a fade-out, optional "play while the focus timer runs". The sound keeps playing when you switch workspace.
+- **Tile names.** Every configurable tile can have its own title.
+
+### Changed
+- New optional host permissions for the rates widget: `https://bank.gov.ua/*`, `https://api.monobank.ua/*`, `https://data-api.binance.vision/*`. Nothing new is required at install.
+- New cache key `hud.rates` (exchange rates and prices). It holds no personal data and can be deleted at any time.
+- The air-raid alerts map and the threat ETA calculator move to 0.6.0.
+
 ## 0.4.0
 
 Existing data is kept. This release adds the outages widget, city search for the weather, and fixes the toolbar menu opening duplicate tabs.
 
 ### Added
-- **Outages widget.** Shows whether the power is on, the time until the next change, and today's and tomorrow's schedule on a 24-hour bar. Two sources: *Yasno* (automatic; Kyiv and Dnipro; cached, works offline) and *Paste a schedule* (any region; understands `00:00 - 08:00`, `з 14:00 до 18:30`, "today"/"tomorrow" lines and 🔴/🟢 hints; rolls over at midnight). Set up from the tile menu, `Enter` on an unconfigured tile, or the command bar.
+- **Outages widget.** Shows whether the power is on, a live countdown to the next change, and today's and tomorrow's schedule on a 24-hour bar, in a layout that adapts to the tile size. Three sources: *bezsvitla.com.ua* (every region of Ukraine; find your queue by street and house, or enter it manually), *Yasno* (Kyiv and Dnipro) and *Paste a schedule* (any region). Schedules are cached, so the tile works offline. Each tile has its own name, so you can add several (for example *Home* and *Work*). Set up from the tile menu (*Configure…*), with `Enter` on an unconfigured tile, or from the command bar.
 - **Per-tile setup:** *Configure…* in the tile menu and the command bar for widgets that have settings.
 - **City search** in Settings: find a city by name and fill the weather location. The geocoding host is an optional permission, asked on first use.
 - Video wallpapers show duration, size and bitrate (local files) and warn about 4K.
@@ -15,11 +34,12 @@ Existing data is kept. This release adds the outages widget, city search for the
 - The toolbar button's *Settings* and *Open VEGA*, and the add-ons *Preferences* page, now reuse an open VEGA tab instead of always opening a new one. No extra permission is needed.
 
 ### Changed
+- All interface text is English.
 - Minimum Firefox version is now 140 (needed for optional host permissions and for the data-collection declaration). `web-ext lint`: 0 errors, 0 warnings.
-- New optional host permissions: `https://geocoding-api.open-meteo.com/*` and `https://app.yasno.ua/*`. Nothing new is required at install.
+- New optional host permissions: `https://bezsvitla.com.ua/*`, `https://geocoding-api.open-meteo.com/*` and `https://app.yasno.ua/*`. Nothing new is required at install.
 
 ### Known issues and follow-ups
-- Only Yasno schedules are automatic. Other operators publish on sites that block automated access or have no open feed, so those regions use *Paste a schedule* until open data exists.
+- Schedules depend on third-party sites. If one changes its page format, use *Paste a schedule* until the adapter is updated.
 - Local wallpapers are not included in JSON exports.
 - "Focus the page on a new tab" still needs a check on your own Firefox.
 

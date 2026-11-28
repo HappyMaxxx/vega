@@ -26,10 +26,11 @@ Sizes are grid cells (the board is 12 columns wide, 8 rows visible). A tile can 
 | Outages | `outage` | 3×3 | 2×2 | 12×8 | `cfg` per tile, cache `hud.outage` |
 
 ### Clock ✅
-Large time with seconds, the date, and a thin bar showing how much of the day has passed.
-- Layouts: full (time, date, progress) → no progress below ~110 px tall → time only below ~70 px → one row (time left, date right) when wide and short. Seconds are hidden below ~190 px wide.
-- Settings: none yet. Ideas: 12/24 h, show seconds, time zone.
-- Keyboard: no inner mode.
+A clock with seven styles, set per tile in *Configure…* (tile menu `m`, or the command bar).
+- **Styles:** *Standard* (time, seconds, date, day-progress bar), *Large*, *Minimal* (time only), *Stacked* (hours over minutes), *Analog* (SVG dial), *Binary* (BCD dots), *Words* ("quarter past nine").
+- **Settings (`cfg`):** `style`, `align` (`left` | `center` | `right`), `valign` (`top` | `middle` | `bottom`), `weight` (`light` | `regular` | `bold`), `date` (`long` | `short` | `numeric` | `none`), `hour12`, `seconds`, `progress`, `name` (tile title). Defaults reproduce the pre-0.5 look, so existing clocks are unchanged.
+- **Layouts:** by size: no progress bar below ~110 px tall, no date below ~70 px, one row (time left, date right) for the standard style when wide and short, seconds hidden below ~190 px wide. The analog dial scales to the free space and follows the alignment.
+- **Keyboard:** no inner mode; `m` → *Configure…*.
 
 ### Weather ✅
 Current temperature, condition, "feels like" and wind, plus a 3-day forecast when the tile is large enough.
@@ -54,10 +55,11 @@ Free text, saved as you type. Each notes tile has its own text (it travels with 
 - Keyboard: `Enter` puts the caret in the text; `Esc` comes out.
 
 ### Links ✅
-Groups of links. Each tile shows all groups, or only one tab (set in edit mode with the picker in the tile header).
-- Colours: link dots use each link's own colour, or the theme palette when "Use theme colours for link dots" is on (default for new installs).
-- Settings: links are edited as JSON in Settings today (an in-page editor is planned).
-- Keyboard: `Enter` goes inside; arrows or `h j k l` move to the nearest link in that direction; `Enter` opens it, `Ctrl+Enter` opens a new tab.
+Groups of links. Each tile shows all groups, only one tab, or a hand-picked set of groups. Every tile has its own look.
+- **Settings (`cfg`, in *Configure…*):** `groups` (list of `tab/name` keys; empty = follow `tab`, the edit-mode tab picker), `layout` (`columns` | `list` | `chips`), `cols` (1–4, 0 = automatic), `align`, `icons` (`dot` | `letter` | `none`), `size` (`small` | `normal` | `large`), `color` (heading colour from a theme token), `headers`, `newTab`, `name`.
+- **Quick add:** the same dialog has *Add a link* (group, name, `https://` address); the link is added to the group at once. Other links are still edited as JSON in Settings.
+- **Colours:** link dots use each link's own colour, or the theme palette when "Use theme colours for link dots" is on (default for new installs).
+- **Keyboard:** `Enter` goes inside; arrows or `h j k l` move to the nearest link in that direction; `Enter` opens it, `Ctrl+Enter` opens a new tab.
 
 ### Outages ✅
 Whether the power is on right now, live second-by-second countdown to the next change, and today's and tomorrow's schedule (Kyiv time).
@@ -71,6 +73,38 @@ Whether the power is on right now, live second-by-second countdown to the next c
 - **Layouts:** vertical card view (live countdown pill, today/tomorrow tabs, slot rows with active slot highlighted) on portrait/square tiles → horizontal timeline (segmented 24h bar with explicit start/end boundary labels at every zone transition + today/tomorrow summary) on wide/short tiles → compact strip on minimal heights.
 - **Keyboard:** `Enter` refreshes, or opens the setup dialog when unconfigured.
 
+### World clocks ✅
+Several time zones on one tile: name, time, the difference from your own time (`+7h`, `−5h 30m`) and `tomorrow`/`yesterday` when the date differs.
+- **Settings (`cfg`):** `zones` (up to 8 × `{ tz, label }`, IANA names such as `Asia/Tokyo`; a fresh tile starts with New York, London, Tokyo), `local` (your own time first), `offsets`, `hour12`, `seconds`, `name`. Add and remove zones in *Configure…*; invalid names are refused.
+- **Data:** none, it uses the browser's time-zone database (`Intl`). No permissions.
+- **Layouts:** rows adapt to the tile; the difference column hides below ~160 px wide.
+
+### Countdown ✅
+Days (or days, hours, minutes) until your dates.
+- **Settings (`cfg`):** `events` (up to 12 × `{ id, name, date, time?, yearly }`), `detail` (`days` | `full`), `order` (`soonest` | `manual`), `hidePast`, `name`. Yearly events roll over to next year; events with a time count down to the minute (to the second in `full`), all-day events count calendar days. A single event is shown large.
+- **Data:** none. No permissions.
+
+### Rates ✅
+Exchange rates and crypto prices from one of three sources, chosen per tile.
+- **Sources:**
+  - *National Bank of Ukraine* (default): the official rate, with the change since the previous published day. Any currency the bank publishes can be the base, cross rates (EUR in USD) go through hryvnia.
+  - *monobank*: **buy / sell** prices against the hryvnia, as on a bank board. Buy is what the bank pays you, sell is what you pay. Pairs without a buy/sell quote show the cross rate.
+  - *Crypto (Binance)*: **buy / sell** are the best bid and ask, plus the 24-hour change. Choose the coins (any ticker Binance lists against the quote) and the quote currency (USDT, EUR or UAH). A pair that does not exist shows a dash.
+- **Data and caching:** `https://bank.gov.ua/NBUStatService/v1/statdirectory/exchange?json` (cached 1 h), `https://api.monobank.ua/bank/currency` (cached 5 min; the API allows one request a minute), `https://data-api.binance.vision/api/v3/ticker/24hr?symbol=…` (cached 1 min). All cached in `hud.rates` (one entry per source), shown from the cache immediately and marked *offline* when the network fails. Prices are informational, not financial advice.
+- **Settings (`cfg`):** `source` (`nbu` | `mono` | `crypto`), `codes` (up to 8 currencies, for NBU and monobank), `base` (NBU only), `coins` and `quote` (crypto), `amount` (price of N units), `decimals` (0–6), `change`, `name`. Add and remove currencies and coins in *Configure…*; codes a source does not publish are refused once its data has been loaded.
+- **Permissions:** optional host, asked when you save a source: `https://bank.gov.ua/*`, `https://api.monobank.ua/*` or `https://data-api.binance.vision/*`.
+- **Layouts:** buy/sell sources show two price columns with a header; the change column hides below ~250 px wide.
+
+### Ambient sounds ✅
+A mixer of background sounds with one slider each: real recordings (rain, thunderstorm, wind in the woods, ocean, stream and birds, birdsong, fireplace) plus three generated noises (white, pink, brown). You can also add your own sounds by link.
+- **Where the sound comes from:** the recordings are streamed from archive.org while they play (public domain or CC0, 3–36 minutes, looped). Nothing is requested until you press *Play* with that sound above zero, and a stream pauses when its slider goes back to zero. The noises are generated with the Web Audio API and work offline. No extension permission is needed (browsers load `<audio>` from any https host); playing a recording contacts archive.org like opening any web page would.
+- **Your own sounds (`cfg.custom`, up to 6):** a name and an `https://` link to an audio file or an internet radio stream. Files loop; radio streams just keep playing.
+- **Settings (`cfg`):** `sounds` (which rows the tile shows), `levels` (sound id → 0–1, saved when you let go of a slider), `master`, `sleepMin` (0, 15, 30, 45, 60, 90; fades out over the last ten seconds), `withTimer` (play while the focus timer is running), `custom`, `name`.
+- **Behaviour:** audio starts only after you press *Play* (browsers require a user gesture). The sound keeps playing when you switch workspace or save settings, and stops when the tile is deleted or the tab is closed. A sound that cannot be loaded (offline, blocked link) is greyed out with a tooltip.
+- **Keyboard:** `Enter` goes inside (focus on *Play*); `Tab` moves between controls; sliders respond to the arrow keys.
+- **Permissions:** none.
+- **Credits (all from archive.org):** *Light Gentle Rain*, *Gentle Ocean*, *Relaxing Nature Sounds – Trickling Stream Sounds & Birds* and *– Birdsong Sound* (CC0, `naturesounds-soundtheraphy`, `ocean-sea-sounds`); *Fire Favorite* (CC0, recorded by inchadney, `FireFavorite`); *TedEllis binaural wind sounds birds woods* (CC0, Yarmonics, `soundica-fs-447408-tedellis-binaural-wind-sounds-birds-woods-mp3`); *thunderstorm* (public domain mark, `thunderstorm_ms_relax_water`). If a link ever disappears, the sound shows as unavailable and can be replaced in `widgets.js` (`STREAMS`) without any data migration.
+
 ---
 
 ## Planned widgets
@@ -83,7 +117,7 @@ Automatic schedules for more regions, as separate adapters behind the same widge
 - **Operator adapters:** added only where the operator or a maintained open-data project publishes a stable, permitted feed. Requests for permission or an API go to the site owners first.
 - **Config:** `source: "json"`, `url`, `group`.
 
-### Air-raid alerts map 📋 (target 0.5.0)
+### Air-raid alerts map 📋 (target 0.6.0)
 An oblast map coloured by current alert status, with the duration of active alerts and an optional browser notification when your pinned regions change.
 - **Data:** an alerts API. These require a personal token (free for non-commercial use on request). The token is stored only in your browser (`localStorage`), never sent anywhere except to that API.
 - **Permissions:** optional host permission for the API host. Notifications are optional and requested on enable.
@@ -91,7 +125,7 @@ An oblast map coloured by current alert status, with the duration of active aler
 - **Size:** default 4×4, min 3×3, max 8×8. The map is an embedded SVG (no remote tiles).
 - **Important:** this is a convenience display. It is not a replacement for official alerts and sirens.
 
-### Threat ETA calculator 📋 (target 0.5.0)
+### Threat ETA calculator 📋 (target 0.6.0)
 A calculator, not a live tracker. You choose a point (a place name from a built-in list or coordinates) and a threat type; it computes the great-circle distance to your pinned locations and an approximate time of flight from a speed table, and shows what time an alert might be expected if none has been declared yet.
 - **Data:** none. It runs offline with typical published speeds per type (editable in the widget settings).
 - **Permissions:** none.
@@ -141,12 +175,8 @@ Turn the Tasks widget from a plain checklist into a lightweight tracker that liv
 - **Later, optional:** two-way sync with Jira so a Jira issue can appear as a task and a local task can be pushed to a project. This depends on the Jira panel above.
 - **Open questions:** how much workflow customisation is worth the added screen space, and whether several task lists (per project) should share one widget.
 
-### Ambient sounds 📋 (unscheduled)
-A small mixer of background sounds: rain, wind, ocean, city, birds, a café, fireplace, plus white/pink/brown noise. Each has its own volume; a sleep timer fades everything out.
-- **How:** noise-based sounds (white/pink/brown noise, rain, wind, waves) are synthesised with the Web Audio API, so they work offline and need no files. Recorded loops (birds, city, café) come from files you add yourself (kept in IndexedDB like local wallpapers) or from CC0 loops listed with their licences.
-- **Config:** `mix` (sound id → volume), `sleepMinutes`.
-- **Permissions:** none for synthesised sounds and local files.
-- **Limits:** browsers only start audio after a click or key press, so a new tab shows a *Play* button instead of starting by itself. Audio stops when the tab navigates away from VEGA; a player that survives that needs a background context (and extra permissions), which is a separate decision.
+### Ambient sounds: recorded loops 💡
+Birds, city and café loops from files you add yourself (kept in IndexedDB like local wallpapers) or from CC0 loops listed with their licences. The synthesised mixer is already shipped.
 
 ### Radio and music player 📋 (unscheduled)
 Station-style playback: lofi and chill internet radio, plus your own songs.
@@ -171,9 +201,6 @@ Browse or search bookmarks inside a tile. **Permissions:** optional `bookmarks` 
 
 ### Recent history 📋
 Recently visited pages. **Permissions:** optional `history`.
-
-### Countdown 📋
-Days or hours until a date. **Config:** `label`, `date`. No network, no permissions.
 
 ### Quick capture 📋
 One-line inbox that appends to Tasks or to a Notes tile. **Config:** `target`.
@@ -200,6 +227,14 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [ ] More outage sources (custom JSON URL, operator adapters)
 
 **0.5.0**
+- [x] Clock styles and alignment (7 styles, per-tile settings)
+- [x] Links settings per tile (layout, columns, markers, groups, quick add)
+- [x] World clocks
+- [x] Countdown
+- [x] Rates (NBU)
+- [x] Ambient sounds
+
+**0.6.0**
 - [ ] Air-raid alerts map
 - [ ] Threat ETA calculator
 
@@ -214,10 +249,9 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [ ] RSS reader
 - [ ] Bookmarks
 - [ ] Recent history
-- [ ] Countdown
 - [ ] Quick capture
 - [ ] More integrations (GitLab, Linear, Todoist, Notion, ...)
-- [ ] Ambient sounds (rain, wind, city, birds, noise)
+- [ ] Ambient sounds: recorded loops
 - [ ] Radio and music player (internet radio, local songs)
 - [ ] Wallpaper presets (postponed)
 - [ ] In-page link editor (not a widget, but unlocks per-tile link lists)
@@ -227,7 +261,7 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 ## How a widget is built
 
 1. **Register the size limits** in `META` in `grid.js`: `def`, `min`, `max` as `[w, h]`. Add the title in `strings.js` (`mod.<type>`).
-2. **Implement `MODULES.<type>.render(body, ctx)`** in `app.js`. `ctx` gives you `it` (the tile: `id`, `cfg`, size), `setStatus(text|Node)` for the right side of the header, and `editing`.
+2. **Implement `MODULES.<type>.render(body, ctx)`** in `app.js`. `ctx` gives you `it` (the tile: `id`, `cfg`, size), `setStatus(text|Node)` for the right side of the header, `setTitle(text)` for a custom tile name, and `editing`. Put pure logic (settings validation, formatting, maths) in `widgets.js` so the tests can cover it without a DOM.
    It may return any of these hooks:
 
    | Hook | When it runs |
@@ -238,6 +272,7 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
    | `commit()` | before the tile is removed or moved: flush pending input |
    | `destroy()` | when the tile is torn down: clear timers |
    | `enter()` | the user pressed `Enter` on the tile; focus your first control. Return `false` if there is nothing to go inside. |
+   | `configure()` | the tile has settings: shows *Configure…* in the tile menu and the command bar. Use `cfgModal()`, the field helpers (`fld`, `mkSel`, `mkChk`, `mkText`), `listEditor()` for add/remove lists and `applyCfg()` to store the result in `it.cfg`. |
 
 3. **Persistence.** Per-tile configuration goes in `it.cfg`. Per-tile data goes in `state.data[it.id]` (it follows the tile through moves and undo). Shared data goes in a top-level key of `state`. Everything is additive: extend `normalize()` in `state.js` with safe defaults and never drop unknown fields.
 4. **Layout.** The tile body is a size container. Use `@container` queries in `style.css` and check the minimum and maximum sizes. Add the widget to the size matrix when you test.
