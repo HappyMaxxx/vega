@@ -5,18 +5,19 @@
 Existing data is kept: every new setting is optional.
 
 ### Added
-- **Air-raid alerts widget (Ukraine).** Pin up to 6 oblasts and see their live alert status from [alerts.in.ua](https://alerts.in.ua/) (your own personal token, stored only in your browser) on a schematic map — click a circle to pin or unpin it. A rough, honestly-ranged arrival estimate derives from how the alert area has been spreading between polls, at a speed you pick per threat type; you can also mark a threat point and time by hand. A trip planner compares the estimate against places you might go (*comfortable* / *tight* / *won't make it*). Optional browser notification and sound when a pinned oblast turns active.
-- **Live tracks (optional, off by default).** The alerts widget can also show individual drone/missile tracks from [kudyletyt.com](https://www.kudyletyt.com/), an independent, volunteer-run monitoring project (not alerts.in.ua, not affiliated with VEGA, and without published terms of use — treated as a best-effort source). A track heading your way sharpens the estimate and draws its own line on the map; turning it on asks a separate permission.
+- **Air-raid alerts widget (Ukraine).** Pin up to 6 oblasts and see their live alert status on a schematic map — click a circle to pin or unpin it. A rough, honestly-ranged arrival estimate derives from how the alert area has been spreading between polls, at a speed you pick per threat type; you can also mark a threat point and time by hand. A trip planner compares the estimate against places you might go (*comfortable* / *tight* / *won't make it*). Optional browser notification and sound when a pinned oblast turns active.
+- **Choice of alert status source, per tile.** The official [alerts.in.ua](https://alerts.in.ua/) API (a personal token, stored only in your browser; whole-oblast *and* partial status), or [kudyletyt.com](https://www.kudyletyt.com/) (no token; an independent, volunteer-run mirror of the same feed, whole-oblast status only — see *Known limitations*).
+- **Live tracks (optional, off by default).** The alerts widget can also show individual drone/missile tracks from kudyletyt.com. A track heading your way sharpens the estimate and draws its own line on the map; turning it on (or choosing kudyletyt.com as the alert source) asks a shared permission.
 - Every configurable tile's *Configure…* now has a consistent list-editor pattern for add/remove rows (places, custom sounds, events, zones), shared across widgets.
 
 ### Changed
-- New optional host permission `https://api.alerts.in.ua/*`, asked only when you save a token.
-- New optional host permission `https://api.kudyletyt.com/*`, asked only if you turn on live tracks.
+- New optional host permission `https://api.alerts.in.ua/*`, asked only when alerts.in.ua is your source and you save a token.
+- New optional host permission `https://api.kudyletyt.com/*`, asked only if you choose kudyletyt.com as your source or turn on live tracks.
 - New cache key `hud.alerts` (the last known oblast statuses and, if enabled, tracks — no personal data).
 
 ### Known limitations
 - The alerts map is schematic (oblast centre points, not traced borders): VEGA has no licensed boundary data for all 27 oblasts yet.
-- Live tracks come from an unofficial, volunteer-run source with no formal terms; they can be late, incomplete or wrong, and the feature may be adjusted if its maintainers ask.
+- kudyletyt.com (both as an alert source and for live tracks) is an unofficial, volunteer-run project with no formal terms; its data can be late, incomplete or wrong, and the feature may be adjusted if its maintainers ask. As an alert source it also only detects whole-oblast alerts, not partial ones.
 - It is a planning aid, not a safety source. Always follow the official alert and the sirens.
 
 ## 0.5.0

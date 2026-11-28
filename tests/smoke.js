@@ -1251,7 +1251,8 @@ describe('alerts widget helpers (pure)', () => {
 
   test('alertsCfg: defaults, limits, and bad input are rejected without throwing', () => {
     const d = Wd.alertsCfg(undefined);
-    assert.deepEqual(d, { name: '', token: '', pinned: [], focus: true, threat: 'drone', speeds: Wd.THREAT_SPEEDS, useTracks: false, trackSpeeds: Wd.TRACK_SPEEDS, manualFrom: '', manualSetAt: undefined, places: [], notify: false, sound: false });
+    assert.deepEqual(d, { name: '', source: 'alertsinua', token: '', pinned: [], focus: true, threat: 'drone', speeds: Wd.THREAT_SPEEDS, useTracks: false, trackSpeeds: Wd.TRACK_SPEEDS, manualFrom: '', manualSetAt: undefined, places: [], notify: false, sound: false });
+    assert.equal(Wd.alertsCfg({ source: 'kudyletyt' }).source, 'kudyletyt'); assert.equal(Wd.alertsCfg({ source: 'nope' }).source, 'alertsinua');
     const c = Wd.alertsCfg({
       token: '  secret  ', pinned: ['kyiv-city', 'bogus', 'kyiv-city', 'kharkiv', 'lviv', 'odesa', 'sumy', 'poltava', 'dnipropetrovsk'],
       threat: 'nope', speeds: { drone: 'x', cruise: 5000 }, places: [{ name: 'Shop', minutes: 15 }, { name: '', minutes: 5 }, { name: 'Clamped', minutes: -1 }, { name: 'Bad', minutes: 'soon' }, null],
@@ -1708,6 +1709,42 @@ describe('widgets in the app (jsdom)', () => {
         assert.match(t.querySelector('.al-eta').textContent, /Possible alert in \d+–\d+ min — from a live jet-powered drone track/);
         assert.ok(t.querySelector('svg.al-map .al-line'), 'a line is drawn from the track towards the pinned oblast');
         assert.match(t.querySelector('.ts').textContent, /kudyletyt\.com/);
+      } finally { await a.close(); }
+    });
+
+    test('kudyletyt.com as the oblast-status source: no token needed, whole-oblast "State" rows match by name, sub-oblast rows are ignored', async () => {
+      const feed = [
+        { regionId: '9999', regionName: 'Автономна Республіка Крим', regionType: 'State', activeAlerts: [{ type: 'AIR', levels: [{ level: 'Red' }] }] },
+        { regionId: '4', regionName: 'Ві\u043dницька область', regionType: 'State', activeAlerts: [{ type: 'AIR', levels: [{ level: 'Yellow' }] }] },
+        { regionId: '1293', regionName: 'м. Харків та Харківська територіальна громада', regionType: 'State', activeAlerts: [{ type: 'AIR', levels: [{ level: 'Red' }] }] },
+        { regionId: '55', regionName: 'Якась територіальна громада', regionType: 'Community', activeAlerts: [{ type: 'ARTILLERY', levels: [{ level: 'Red' }] }] },
+      ];
+      const urls = [];
+      const net = w => { w.fetch = async u => { u = String(u); urls.push(u); if (u.includes('/alerts')) return { ok: true, json: async () => feed }; throw new Error('unexpected url ' + u); }; };
+      const a = await boot(withTiles({ type: 'alerts', cfg: { source: 'kudyletyt', pinned: ['vinnytsia', 'kharkiv', 'kyiv-city'] } }), net);
+      try {
+        await settle(80);
+        assert.ok(urls.some(u => u === 'https://api.kudyletyt.com/alerts'));
+        assert.equal(urls.some(u => u.includes('alerts.in.ua')), false, 'no official API call when kudyletyt is the source');
+        const t = tile(a, 'alerts');
+        assert.match(t.querySelector('.al-pins').textContent, /Vinn\u0079tsia: Preliminary alert/);
+        assert.match(t.querySelector('.al-pins').textContent, /Kharkiv: Alert active/, 'the compound "м. Харків та …" row still matches Kharkiv');
+        assert.match(t.querySelector('.al-pins').textContent, /Kyiv \(city\): No alert/, 'a Community-level row is not attributed to any oblast');
+        assert.match(t.querySelector('.ts').textContent, /kudyletyt\.com/);
+      } finally { await a.close(); }
+    });
+
+    test('Configure: switching the source hides the token field and its help text', async () => {
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123', pinned: ['kyiv-city'] } }), alertsNet(ONE_RED));
+      try {
+        await settle(80);
+        menuConfigure(a, 'alerts');
+        const tokenInput = () => a.w.document.querySelector('.mbox [aria-label="alerts.in.ua token"]');
+        assert.equal(tokenInput().closest('.fr').hidden, false);
+        set(ctl(a, 'Source'), 'kudyletyt');
+        assert.equal(tokenInput().closest('.fr').hidden, true);
+        saveBtn(a).click(); await settle(80);
+        assert.equal(a.saved().ws[3].items.find(i => i.id === 'n0').cfg.source, 'kudyletyt');
       } finally { await a.close(); }
     });
   });

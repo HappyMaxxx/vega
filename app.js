@@ -1191,10 +1191,12 @@ MODULES.ambient.render = (body, ctx) => {
   };
 };
 
-/* ═════════════ air-raid alerts (Ukraine): alerts.in.ua status per oblast, a schematic map, and an estimate
-   derived from how the alert area has been spreading. Optionally, live drone/missile tracks from kudyletyt.com,
-   an independent, unofficial OSINT project (off by default) — see docs/WIDGETS.md for what both can and cannot tell you. ═════════════ */
-const ALERTS_ORIGIN = 'https://api.alerts.in.ua/*', TRACKS_ORIGIN = 'https://api.kudyletyt.com/*', AKEY = 'hud.alerts', ALERTS_POLL = 30e3, TRACKS_POLL = 20e3;
+/* ═════════════ air-raid alerts (Ukraine): alert status per oblast (two interchangeable sources), a schematic
+   map, and an estimate derived from how the alert area has been spreading. Optionally, live drone/missile tracks
+   from kudyletyt.com, an independent, unofficial OSINT project (off by default) — see docs/WIDGETS.md for what
+   both the sources and the estimate can and cannot tell you. ═════════════ */
+const ALERTS_ORIGIN = 'https://api.alerts.in.ua/*', KUDYLETYT_ORIGIN = 'https://api.kudyletyt.com/*';
+const AKEY = 'hud.alerts', ALERTS_POLL = 30e3, TRACKS_POLL = 20e3;
 const alertsCache = {
   read() { try { const j = JSON.parse(localStorage.getItem(AKEY)); return j && isObjGuard(j) ? j : {}; } catch { return {}; } },
   write(v) { try { localStorage.setItem(AKEY, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
@@ -1206,6 +1208,38 @@ async function fetchAlerts(token) {
   const raw = JSON.parse(await r.text());                        // the body is itself a JSON string, e.g. "RNNNN…"
   if (typeof raw !== 'string' || raw.length !== W.OBLASTS.length) throw new Error('shape');
   return { ts: Date.now(), raw };
+}
+// kudyletyt.com's own mirror of the official feed: an "active alerts only" list, at raion/hromada granularity in
+// places, with no parent-oblast field. We can only trust the whole-oblast ("State") rows here, matched by their
+// Ukrainian name, so a sub-oblast ("partial") alert is invisible through this source — see docs/WIDGETS.md.
+const UA_OBLAST_NAMES = {
+  crimea: ['Автономна Республіка Крим'], volyn: ['Волинська область'], vinnytsia: ['Ві\u043dницька область'],
+  dnipropetrovsk: ['Дніпропетровська область'], donetsk: ['Донецька область'], zhytomyr: ['Житомирська область'],
+  zakarpattia: ['Закарпатська область'], zaporizhzhia: ['Запорізька область'], 'ivano-frankivsk': ['Івано-Франківська область'],
+  'kyiv-city': ['м. Київ'], 'kyiv-oblast': ['Київська область'], kirovohrad: ['Кіровоградська область'],
+  luhansk: ['Луганська область'], lviv: ['Львівська область'], mykolaiv: ['Миколаївська область'], odesa: ['Одеська область'],
+  poltava: ['Полтавська область'], rivne: ['Рівненська область'], sevastopol: ['м. Севастополь'], sumy: ['Сумська область'],
+  ternopil: ['Тернопільська область'], kharkiv: ['Харківська область', 'м. Харків'], kherson: ['Херсонська область'],
+  khmelnytskyi: ['Хмельницька область'], cherkasy: ['Черкаська область'], chernivtsi: ['Чернівецька область'], chernihiv: ['Чернігівська область'],
+};
+function kudyletytOblastIdx(regionName) {
+  for (const [id, names] of Object.entries(UA_OBLAST_NAMES)) if (names.some(n => regionName.includes(n))) return W.OBLAST_BY_ID[id];
+  return -1;
+}
+async function fetchKudyletytAlerts() {
+  const r = await fetch(W.KUDYLETYT_ALERTS_ENDPOINT, { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error(r.status);
+  const list = await r.json();
+  if (!Array.isArray(list)) throw new Error('shape');
+  const codes = Array(W.OBLASTS.length).fill('N');
+  for (const entry of list) {
+    if (!isObjGuard(entry) || entry.regionType !== 'State' || !Array.isArray(entry.activeAlerts)) continue;
+    const idx = kudyletytOblastIdx(String(entry.regionName || ''));
+    if (idx < 0) continue;
+    const levels = entry.activeAlerts.flatMap(a => (a && Array.isArray(a.levels) ? a.levels : []).map(l => l && l.level));
+    codes[idx] = levels.includes('Red') ? 'R' : levels.includes('Yellow') ? 'Y' : 'R';
+  }
+  return { ts: Date.now(), raw: codes.join('') };
 }
 async function fetchTracks() {
   const r = await fetch(W.TRACKS_ENDPOINT, { headers: { Accept: 'application/json' } });
@@ -1243,6 +1277,7 @@ MODULES.alerts.render = (body, ctx) => {
   const PROJ = W.projectOblasts();
   const c = () => W.alertsCfg(it.cfg);
   const writeCache = () => alertsCache.write({ oblast: oblastCache, tracks: tracksCache });
+  const oblastOrigin = x => x.source === 'kudyletyt' ? KUDYLETYT_ORIGIN : ALERTS_ORIGIN;
 
   // The best current estimate across every source: the alert-spread heuristic, a hand-marked threat, and (if
   // enabled) live tracks whose heading points roughly at the oblast. Always returns a point to draw the line from.
@@ -1299,7 +1334,7 @@ MODULES.alerts.render = (body, ctx) => {
 
   const draw = () => {
     const x = c();
-    if (!x.token) { root.replaceChildren(h('div', { class: 'al-empty' }, h('div', { class: 'note', text: S.al.setupHint }), h('button', { class: 'btn main', onclick: configure }, S.al.setup))); return; }
+    if (x.source === 'alertsinua' && !x.token) { root.replaceChildren(h('div', { class: 'al-empty' }, h('div', { class: 'note', text: S.al.setupHint }), h('button', { class: 'btn main', onclick: configure }, S.al.setup))); return; }
     const rows = oblastCache && W.parseOblastString(oblastCache.raw);
     if (oblastCache && !rows) { oblastCache = null; failed = true; }              // corrupt or pre-0.6 cache: treat as missing
     if (!oblastCache) {
@@ -1327,7 +1362,7 @@ MODULES.alerts.render = (body, ctx) => {
         x.pinned.length ? etaEl : null, noteEl,
         placeEls.length ? h('div', { class: 'al-places' }, placeEls.map(pe => pe.row)) : null));
     tick();
-    const bits = [S.al.source, S.al.updated(Math.max(0, Math.round((now - oblastCache.ts) / 60000)))];
+    const bits = [S.al.sourceLabel[x.source], S.al.updated(Math.max(0, Math.round((now - oblastCache.ts) / 60000)))];
     if (failed) bits.push(S.al.offline);
     if (x.useTracks) bits.push(tracksCache ? S.al.tracksSource : tracksFailed ? S.al.tracksOffline : S.al.loading);
     ctx.setStatus(bits.join(' · '));
@@ -1358,14 +1393,14 @@ MODULES.alerts.render = (body, ctx) => {
   const load = async force => {
     if (loading) return;
     const x = c();
-    if (!x.token) { needAccess = false; return; }
+    if (x.source === 'alertsinua' && !x.token) { needAccess = false; return; }
     const fresh = oblastCache && Date.now() - oblastCache.ts < ALERTS_POLL * .9 && !force;
     if (!fresh) {
       loading = true;
       try {
-        if (!(await hasOrigin(ALERTS_ORIGIN))) { needAccess = true; return; }
+        if (!(await hasOrigin(oblastOrigin(x)))) { needAccess = true; return; }
         needAccess = false;
-        const next = await fetchAlerts(x.token);
+        const next = x.source === 'alertsinua' ? await fetchAlerts(x.token) : await fetchKudyletytAlerts();
         detectTransitions(next);
         oblastCache = next; writeCache(); failed = false;
       } catch { failed = true; }
@@ -1374,14 +1409,14 @@ MODULES.alerts.render = (body, ctx) => {
     if (x.useTracks) await loadTracks(force);
     if (!dead) draw();
   };
-  // Independent of the alerts poll: optional, and the only feature that talks to a different, unofficial host.
+  // Independent of the oblast-status poll: the only call that always goes to kudyletyt.com regardless of source.
   const loadTracks = async force => {
     if (loadingTracks) return;
     const fresh = tracksCache && Date.now() - tracksCache.ts < TRACKS_POLL * .9 && !force;
     if (fresh) return;
     loadingTracks = true;
     try {
-      if (!(await ensureOrigin(TRACKS_ORIGIN))) { tracksFailed = true; return; }
+      if (!(await ensureOrigin(KUDYLETYT_ORIGIN))) { tracksFailed = true; return; }
       tracksCache = await fetchTracks(); writeCache(); tracksFailed = false;
     } catch { tracksFailed = true; }
     finally { loadingTracks = false; }
@@ -1390,7 +1425,12 @@ MODULES.alerts.render = (body, ctx) => {
   const configure = () => {
     const x = c();
     const name = mkText(S.cf.name, x.name, S.cf.namePh, 40);
+    const source = mkSel(S.al.source, W.ALERTS_SOURCES.map(s => [s, S.al.sourceNames[s]]), x.source);
     const token = h('input', { class: 'fi', type: 'password', value: x.token, placeholder: S.al.tokenPh, 'aria-label': S.al.token, autocomplete: 'off', spellcheck: 'false' });
+    const tokenRow = fld(S.al.token, token), tokenHelp = h('div', { class: 'note', text: S.al.tokenHelp });
+    const kudyNote = h('div', { class: 'note', text: S.al.kudyletytNote });
+    const showSource = () => { const kudy = source.value === 'kudyletyt'; tokenRow.hidden = kudy; tokenHelp.hidden = kudy; kudyNote.hidden = !kudy; };
+    source.addEventListener('change', showSource); showSource();
     const boxes = W.OBLASTS.map(o => ({ id: o.id, el: h('input', { type: 'checkbox', checked: x.pinned.includes(o.id), disabled: !x.pinned.includes(o.id) && x.pinned.length >= W.ALERTS_PINNED_MAX ? '' : null, 'aria-label': o.name }) }));
     const pickList = h('div', { class: 'lc-groups' }, boxes.map((b, i) => h('label', { class: 'lc-g' }, b.el, h('span', { text: W.OBLASTS[i].name }))));
     const focus = mkChk(x.focus);
@@ -1407,7 +1447,7 @@ MODULES.alerts.render = (body, ctx) => {
     const useTracks = mkChk(x.useTracks);
     const trackSpeeds = Object.fromEntries(W.TRACK_TYPES.map(t => [t, h('input', { class: 'fi', type: 'number', min: 1, max: 30000, step: 1, value: String(x.trackSpeeds[t]), 'aria-label': S.al.speedLabel(S.al.trackNames[t]) })]));
     cfgModal(MODULES.alerts.title, [
-      fld(S.cf.name, name), fld(S.al.token, token), h('div', { class: 'note', text: S.al.tokenHelp }),
+      fld(S.cf.name, name), fld(S.al.source, source), tokenRow, tokenHelp, kudyNote,
       h('h3', { text: S.al.oblasts }), pickList, chkRow(S.al.focus, focus),
       h('h3', { text: S.al.estimate }), fld(S.al.threat, threat),
       ...W.THREAT_TYPES.map(t => fld(S.al.speedLabel(S.al.threatNames[t]), speeds[t])),
@@ -1420,12 +1460,13 @@ MODULES.alerts.render = (body, ctx) => {
       const pinned = boxes.filter(b => b.el.checked).map(b => b.id);
       const places = ed.read().filter(p => p.name || p.minutes);
       if (places.some(p => !p.name || !(+p.minutes > 0))) return toast(S.al.badPlace);
-      if (useTracks.checked && !(await ensureOrigin(TRACKS_ORIGIN))) return toast(S.al.denied);
+      const needKudy = source.value === 'kudyletyt' || useTracks.checked;
+      if (needKudy && !(await ensureOrigin(KUDYLETYT_ORIGIN))) return toast(S.al.denied);
       const sp = {}; for (const t of W.THREAT_TYPES) sp[t] = +speeds[t].value;
       const tsp = {}; for (const t of W.TRACK_TYPES) tsp[t] = +trackSpeeds[t].value;
       if (notify.checked && typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission();
       applyCfg(it, ctx, {
-        name: name.value.trim(), token: token.value.trim(), pinned, focus: focus.checked, threat: threat.value, speeds: sp,
+        name: name.value.trim(), source: source.value, token: token.value.trim(), pinned, focus: focus.checked, threat: threat.value, speeds: sp,
         useTracks: useTracks.checked, trackSpeeds: tsp,
         manualFrom: mFrom.value, manualSetAt: mMark.checked ? Date.now() : (mFrom.value === x.manualFrom ? x.manualSetAt : undefined),
         places, notify: notify.checked, sound: sound.checked,

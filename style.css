@@ -308,6 +308,7 @@ body.resizing .tile.focus, .tile.inside { --bk: var(--hot); border-color: var(--
 @container (max-height: 95px) { .ou-tl { display: none; } .ou { padding-bottom: 6px; gap: 4px; } }
 .ou-cfg { display: grid; gap: 10px; }
 .ou-cfg[hidden] { display: none; }
+.fr[hidden] { display: none; }
 .ou-addr { padding: 10px; border: 1px solid var(--line); border-radius: var(--r-ctl); background: var(--surface); }
 textarea.fi::placeholder { color: var(--dim); }
 

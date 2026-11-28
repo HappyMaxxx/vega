@@ -410,6 +410,10 @@ const OBLASTS = [
 const OBLAST_BY_ID = Object.fromEntries(OBLASTS.map((o, i) => [o.id, i]));
 const CODE_LEVEL = { R: 'red', Y: 'yellow', P: 'partial', N: null };          // v2 active_air_raid_alerts_by_oblast.json
 const ALERTS_ENDPOINT = 'https://api.alerts.in.ua/v2/iot/active_air_raid_alerts_by_oblast.json';
+// Two interchangeable status sources, per tile: the official API (a personal token, oblast *and* partial status),
+// or kudyletyt.com's own mirror of it (no token, but only whole-oblast alerts are detected — see docs/WIDGETS.md).
+const ALERTS_SOURCES = ['alertsinua', 'kudyletyt'];
+const KUDYLETYT_ALERTS_ENDPOINT = 'https://api.kudyletyt.com/alerts';
 const ALERTS_PINNED_MAX = 6, ALERTS_PLACES_MAX = 8, ALERTS_FRESH_MIN = 90;    // an event older than this no longer drives an estimate
 const THREAT_TYPES = ['drone', 'cruise', 'ballistic'];
 // Typical published speeds (km/h), editable per tile. Rough and public: not a substitute for an official source.
@@ -545,7 +549,7 @@ function alertsCfg(c) {
   const manualFrom = typeof c.manualFrom === 'string' && c.manualFrom in OBLAST_BY_ID ? c.manualFrom : '';
   const manualSetAt = manualFrom !== '' && Number.isFinite(+c.manualSetAt) && +c.manualSetAt > 0 ? +c.manualSetAt : undefined;
   return {
-    name: str(c.name, 40), token: str(c.token, 200),
+    name: str(c.name, 40), source: pick(c.source, ALERTS_SOURCES, 'alertsinua'), token: str(c.token, 200),
     pinned,
     focus: c.focus !== false, threat: pick(c.threat, THREAT_TYPES, 'drone'), speeds: sp,
     useTracks: !!c.useTracks, trackSpeeds: tsp,
@@ -560,7 +564,7 @@ const out = {
   NBU, nbuDate, parseNbu, convert, ratesCfg, MONO, ISO_NUM, parseMono, BINANCE, QUOTES, parseTicker,
   LINK_LAYOUTS, LINK_ICONS, LINK_SIZES, LINK_COLORS, linksCfg,
   SOUNDS, STREAMS, SYNTH, CUSTOM_MAX, SLEEP_OPTIONS, ambientCfg, createAmbient, noiseData,
-  OBLASTS, OBLAST_BY_ID, CODE_LEVEL, ALERTS_ENDPOINT, ALERTS_PINNED_MAX, ALERTS_PLACES_MAX, ALERTS_FRESH_MIN, THREAT_TYPES, THREAT_SPEEDS,
+  OBLASTS, OBLAST_BY_ID, CODE_LEVEL, ALERTS_ENDPOINT, ALERTS_SOURCES, KUDYLETYT_ALERTS_ENDPOINT, ALERTS_PINNED_MAX, ALERTS_PLACES_MAX, ALERTS_FRESH_MIN, THREAT_TYPES, THREAT_SPEEDS,
   parseOblastString, haversineKm, minutesRemaining, nearestPinnedKm, estimateFromEvents, estimateFromManual, tripCompare,
   ALERTS_SPACE, projectOblasts, projectPoint, bearingDeg, bearingGap, alertsCfg,
   TRACKS_ENDPOINT, TRACK_TYPES, TRACK_SPEEDS, TRACK_CONE_DEG, parseTracks, estimateFromTrack,
