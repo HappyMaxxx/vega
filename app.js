@@ -244,7 +244,7 @@ function buildTile(it) {
   const status = h('span', { class: 'ts' });
   const rec = { it, el: null, body: null, api: {} };
   const th = h('header', { class: 'th', onpointerdown: e => dragTrack(e, rec, 'move') },
-    h('span', { class: 'tt', text: mod.title }), status,
+    h('span', { class: 'tt', text: (it.cfg && it.cfg.name) || mod.title }), status,
     h('button', { class: 'tb tmn', title: S.tileMenu + ' (M)', 'aria-label': S.tileMenu, 'aria-haspopup': 'menu', onclick: e => openTileMenu(it.id, e.currentTarget) }, '…'),
     h('button', { class: 'tb tc', title: S.tileDelete + ' (X)', 'aria-label': S.tileDelete, onclick: () => removeTile(it.id) }, '×'));
   const body = h('div', { class: 'mb' });
@@ -253,7 +253,7 @@ function buildTile(it) {
   rec.el = el; rec.body = body;
   tiles.set(it.id, rec);
   field.append(el);
-  rec.api = mod.render(body, { it, setStatus: t => { status.replaceChildren(t); }, editing }) || {};
+  rec.api = mod.render(body, { it, setStatus: t => { status.replaceChildren(t); }, setTitle: t => { th.querySelector('.tt').textContent = t || mod.title; }, editing }) || {};
   return rec;
 }
 
@@ -868,7 +868,7 @@ MODULES.outage.render = (body, ctx) => {
     liveDays = days; liveSt = st;
     if (viewDay === 1 && (!days[1] || days[1].status !== 'known')) viewDay = 0;
 
-    const away = OU.durationUk(st.endsAt - now.minutes);
+    const away = OU.durationText(st.endsAt - now.minutes);
     const sub = st.kind === 'off'
       ? (st.open ? S.ou.untilAtLeast(OU.clockEnd(st.endsAt)) : (st.endsAt >= OU.DAY ? S.ou.onTomorrowAt : S.ou.onAt)(OU.clock(st.endsAt), away))
       : st.kind === 'on'
@@ -910,7 +910,7 @@ MODULES.outage.render = (body, ctx) => {
     const updMs = sch.updated ? Date.parse(sch.updated) : NaN;
     const updMin = Number.isFinite(updMs) ? Math.round((Date.now() - updMs) / 60e3) : null;
     const metaText = sch.offline ? S.ou.offlineTag
-      : updMin !== null && updMin >= 0 ? S.ou.updated(OU.durationUk(updMin))
+      : updMin !== null && updMin >= 0 ? S.ou.updated(OU.durationText(updMin))
       : it.cfg.source === 'paste' ? S.ou.pasted : '';
     const srcHref = it.cfg.source === 'bezsvitla'
       ? (it.cfg.sourceUrl || OU.bezsvitlaUrl(it.cfg.regionSlug, it.cfg.queue))
@@ -938,7 +938,7 @@ MODULES.outage.render = (body, ctx) => {
     if (dead) return;
     loading = false; remote = res; failed = !res; draw(true);
   };
-  const configure = () => configureOutage(it, () => { remote = null; viewDay = 0; save(); load(true); draw(true); });
+  const configure = () => configureOutage(it, () => { ctx.setTitle(it.cfg.name); remote = null; viewDay = 0; save(); load(true); draw(true); });
 
   draw(true); load(false);
   const iv = setInterval(() => load(false), 15 * 60e3);
@@ -954,6 +954,7 @@ function configureOutage(it, onSaved) {
   const cfg = it.cfg, now = OU.kyivNow(Date.now());
   const sel = (label, cls) => h('select', { class: 'fi ' + (cls || ''), 'aria-label': label });
   const fill = (el, items, cur) => el.replaceChildren(...items.map(([v, t]) => h('option', { value: v, selected: String(v) === String(cur) }, t)));
+  const nameIn = h('input', { class: 'fi', maxlength: 40, value: cfg.name || '', placeholder: S.ou.namePh, 'aria-label': S.ou.name });
   const src = sel(S.ou.source);
   fill(src, [['bezsvitla', S.ou.srcBezsvitla], ['yasno', S.ou.srcYasno], ['paste', S.ou.srcPaste]], cfg.source || 'bezsvitla');
 
@@ -962,7 +963,7 @@ function configureOutage(it, onSaved) {
   const bzNote = h('div', { class: 'note' });
   let pickedCity = cfg.cityId ? { id: cfg.cityId, name: cfg.cityName || '' } : null;
 
-  fill(bzReg, OU.BEZSVITLA_REGIONS.map(r => [r.slug, r.active ? r.name : `${r.name} (обмежено)`]), cfg.regionSlug || 'kyiv');
+  fill(bzReg, OU.BEZSVITLA_REGIONS.map(r => [r.slug, r.active ? r.name : `${r.name} (limited)`]), cfg.regionSlug || 'kyiv');
   const syncQueues = (preferred) => {
     const qs = OU.bezsvitlaQueues(bzReg.value);
     const cur = preferred || cfg.queue || qs[0];
@@ -1167,9 +1168,10 @@ function configureOutage(it, onSaved) {
       cfg.source = 'paste';
       cfg.paste = { date: now.date, today: p.days.today, tomorrow: p.days.tomorrow, savedAt: new Date().toISOString(), raw: ta.value.slice(0, 4000), meaning: meaning.value };
     }
+    cfg.name = nameIn.value.trim().slice(0, 40) || undefined;
     closeLayer(); onSaved();
   };
-  openModal(S.ou.title, [h('label', { class: 'fr' }, h('span', { text: S.ou.source }), src), bzPanel, yasnoPanel, pastePanel],
+  openModal(S.ou.title, [h('label', { class: 'fr' }, h('span', { text: S.ou.name }), nameIn), h('label', { class: 'fr' }, h('span', { text: S.ou.source }), src), bzPanel, yasnoPanel, pastePanel],
     [h('button', { class: 'btn', onclick: closeLayer }, S.cancel), h('button', { class: 'btn main', onclick: done }, S.save)]);
 
   hasOrigin(BEZSVITLA_ORIGIN).then(ok => { allowBz.hidden = ok; });
