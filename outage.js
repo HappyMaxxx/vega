@@ -78,6 +78,152 @@ function dayFromParsed(date, intervals) {
   return dayFromOff(date, inv);
 }
 
+/* ───────────── bezsvitla.com.ua catalog & HTML parser ───────────── */
+const BEZSVITLA_BASE = 'https://bezsvitla.com.ua';
+const BEZSVITLA_REGIONS = [
+  { slug: 'kyiv', name: 'м. Київ', kind: 'kyiv60', active: true, hasStreets: true },
+  { slug: 'kyivska-oblast', name: 'Київська область', kind: 'sub', active: true },
+  { slug: 'lvivska-oblast', name: 'Львівська область', kind: 'sub', active: true },
+  { slug: 'dnipropetrovska-oblast', name: 'Дніпропетровська область', kind: 'sub', active: true },
+  { slug: 'odeska-oblast', name: 'Одеська область', kind: 'sub', active: true },
+  { slug: 'kharkivska-oblast', name: 'Харківська область', kind: 'sub', active: true },
+  { slug: 'vinnytska-oblast', name: '\u0412\u0456\u043d\u043d\u0438\u0446\u044c\u043a\u0430 область', kind: 'sub', active: true },
+  { slug: 'volynska-oblast', name: 'Волинська область', kind: 'sub', active: true },
+  { slug: 'zhytomyrska-oblast', name: 'Житомирська область', kind: 'sub', active: true },
+  { slug: 'zakarpatska-oblast', name: 'Закарпатська область', kind: 'sub', active: true },
+  { slug: 'zaporizka-oblast', name: 'Запорізька область', kind: 'sub', active: true },
+  { slug: 'ivano-frankivska-oblast', name: 'Івано-Франківська область', kind: 'sub', active: true },
+  { slug: 'kirovohradska-oblast', name: 'Кіровоградська область', kind: 'sub', active: true },
+  { slug: 'mykolaivska-oblast', name: 'Миколаївська область', kind: 'sub', active: true },
+  { slug: 'poltavska-oblast', name: 'Полтавська область', kind: 'sub', active: true },
+  { slug: 'rivnenska-oblast', name: 'Рівненська область', kind: 'sub', active: true },
+  { slug: 'sumska-oblast', name: 'Сумська область', kind: 'sub', active: true },
+  { slug: 'ternopilska-oblast', name: 'Тернопільська область', kind: 'sub', active: true },
+  { slug: 'khmelnytska-oblast', name: 'Хмельницька область', kind: 'sub', active: true },
+  { slug: 'cherkaska-oblast', name: 'Черкаська область', kind: 'sub', active: true },
+  { slug: 'chernivetska-oblast', name: 'Чернівецька область', kind: 'int12', active: true },
+  { slug: 'chernihivska-oblast', name: 'Чернігівська область', kind: 'sub', active: true },
+  { slug: 'donetska-oblast', name: 'Донецька область', kind: 'sub', active: false },
+  { slug: 'luhanska-oblast', name: 'Луганська область', kind: 'sub', active: false },
+  { slug: 'khersonska-oblast', name: 'Херсонська область', kind: 'sub', active: false },
+];
+const SUB_QUEUES = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2', '5.1', '5.2', '6.1', '6.2'];
+const INT12_QUEUES = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const KYIV60_QUEUES = Array.from({ length: 60 }, (_, i) => `${i + 1}.1`);
+const bezsvitlaRegion = slug => BEZSVITLA_REGIONS.find(r => r.slug === slug) || null;
+function bezsvitlaQueues(slug) {
+  const r = bezsvitlaRegion(slug);
+  if (!r) return SUB_QUEUES;
+  return r.kind === 'kyiv60' ? KYIV60_QUEUES : r.kind === 'int12' ? INT12_QUEUES : SUB_QUEUES;
+}
+function normalizeBezsvitlaQueue(slug, raw) {
+  let s = String(raw || '').trim().replace(/^(?:черга|група|підчерга)\s*/i, '').replace(/[-,]/g, '.').replace(/\s+/g, '');
+  if (!s) return '';
+  const r = bezsvitlaRegion(slug);
+  if (r && r.kind === 'int12') {
+    const pair = s.match(/^(\d+)\.(\d+)$/);
+    if (pair) return String((+pair[1] - 1) * 2 + (+pair[2] >= 2 ? 2 : 1));
+    const n = parseInt(s, 10);
+    return Number.isFinite(n) && n >= 1 && n <= 12 ? String(n) : s;
+  }
+  if (r && r.kind === 'kyiv60' && /^\d+$/.test(s)) return `${s}.1`;
+  if ((!r || r.kind === 'sub') && /^\d+$/.test(s)) return `${s}.1`;
+  return s;
+}
+function bezsvitlaUrl(slug, queue) {
+  const r = bezsvitlaRegion(slug);
+  const q = normalizeBezsvitlaQueue(slug, queue);
+  if (!slug) return BEZSVITLA_BASE;
+  if (!q) return `${BEZSVITLA_BASE}/${slug}`;
+  if (r && r.kind === 'int12' && /^\d+$/.test(q)) {
+    const n = +q;
+    return `${BEZSVITLA_BASE}/${slug}/cherha-${Math.ceil(n / 2)}-${n % 2 ? 1 : 2}`;
+  }
+  return `${BEZSVITLA_BASE}/${slug}/cherha-${q.replace(/\./g, '-')}`;
+}
+
+const decodeAttr = s => String(s || '')
+  .replace(/&quot;/g, '"').replace(/&#039;|&apos;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+const hmToMin = s => {
+  const m = String(s || '').match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  const h = +m[1], min = +m[2];
+  return (h === 24 && min === 0) ? DAY : (h >= 0 && h < 24 && min >= 0 && min < 60) ? h * 60 + min : null;
+};
+const BZ_STATE = { ON: 'on', OFF: 'off', MAYBE: 'maybe', POSSIBLE: 'maybe', UNKNOWN: 'maybe' };
+function slotsFromBzJson(raw) {
+  let arr;
+  try { arr = typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return []; }
+  if (!Array.isArray(arr)) return [];
+  const slots = [];
+  for (const x of arr) {
+    const start = hmToMin(x && x.from), end = hmToMin(x && x.to);
+    if (start === null || end === null || end <= start) continue;
+    slots.push({ start, end, type: BZ_STATE[String(x.state || '').toUpperCase()] || 'maybe' });
+  }
+  return merge(slots.sort((a, b) => a.start - b.start));
+}
+function slotsFromBzDom(cardHtml) {
+  const slots = [];
+  const re = /bz-schedule-slot--(on|off|maybe)[\s\S]*?(\d{1,2}:\d{2})\s*[–—-]\s*(\d{1,2}:\d{2})/gi;
+  for (const m of cardHtml.matchAll(re)) {
+    const start = hmToMin(m[2]), end = hmToMin(m[3]);
+    if (start !== null && end !== null && end > start) slots.push({ start, end, type: m[1].toLowerCase() });
+  }
+  return merge(slots.sort((a, b) => a.start - b.start));
+}
+function parseBzUpdated(html) {
+  const t = html.match(/bz-schedule-hero__stamp--updated[\s\S]*?<time[^>]*datetime="([^"]+)"/i);
+  if (t) return t[1];
+  const u = html.match(/bz-schedule-card__updated[^>]*>\s*(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})/);
+  if (u) return `${u[3]}-${u[2]}-${u[1]}T${u[4]}:${u[5]}:00+02:00`;
+  return '';
+}
+function pickBzCard(html, queue) {
+  const cards = [...String(html || '').matchAll(/<article\b[^>]*bz-schedule-card[\s\S]*?<\/article>/gi)].map(m => m[0]);
+  if (!cards.length) return String(html || '');
+  if (cards.length === 1 || !queue) return cards[0];
+  const q = String(queue).trim(), slugPart = `cherha-${q.replace(/\./g, '-')}`;
+  return cards.find(c => c.includes(slugPart) || new RegExp(`(?:Черга|Група)\\s*${q.replace('.', '\\.')}(?!\\d)`, 'i').test(c)) || cards[0];
+}
+function fromBezsvitlaHtml(html, queue, tomorrowHtml, fallbackDate) {
+  if (!html) return null;
+  const text = String(html);
+  const card = pickBzCard(text, queue);
+  const attr = name => {
+    const m = card.match(new RegExp(`${name}=(?:"([^"]*)"|'([^']*)')`, 'i'));
+    return m ? decodeAttr(m[1] !== undefined ? m[1] : m[2]) : '';
+  };
+  const dateMatch = attr('data-schedule-date') || (text.match(/data-schedule-date="(\d{4}-\d{2}-\d{2})"/) || [])[1] || fallbackDate || '';
+  let todaySlots = slotsFromBzJson(attr('data-schedule-intervals'));
+  if (!todaySlots.length) todaySlots = slotsFromBzDom(card);
+  let tmSlots = slotsFromBzJson(attr('data-schedule-tomorrow'));
+  if (!tmSlots.length && tomorrowHtml) {
+    const tmCard = pickBzCard(String(tomorrowHtml), queue);
+    const tmAttr = name => {
+      const m = tmCard.match(new RegExp(`${name}=(?:"([^"]*)"|'([^']*)')`, 'i'));
+      return m ? decodeAttr(m[1] !== undefined ? m[1] : m[2]) : '';
+    };
+    tmSlots = slotsFromBzJson(tmAttr('data-schedule-intervals'));
+    if (!tmSlots.length) tmSlots = slotsFromBzDom(tmCard);
+  }
+  const hasCard = /bz-schedule-card|bz-schedule-countdown/i.test(text);
+  if (!hasCard && !todaySlots.length) return null;
+  const d0 = dateMatch || kyivNow(Date.now()).date;
+  const d1 = addDays(d0, 1);
+  return {
+    updated: parseBzUpdated(text),
+    days: [
+      todaySlots.length ? { date: d0, status: 'known', slots: todaySlots } : emptyDay(d0, 'waiting'),
+      tmSlots.length ? { date: d1, status: 'known', slots: tmSlots } : emptyDay(d1, 'waiting'),
+    ],
+  };
+}
+function extractCityId(html) {
+  const m = String(html || '').match(/(?:data-city-id=["']|city_id\s*[:=]\s*["']?)(\d+)/i);
+  return m ? +m[1] : 0;
+}
+
 /* ───────────── sources ───────────── */
 const YASNO_TYPE = { NotPlanned: 'on', Definite: 'off' };
 function fromYasno(json, group) {
@@ -126,11 +272,18 @@ function status(days, nowMin) {
   return { kind, endsAt: end, open: end >= known };
 }
 
-// minutes -> "2 h 15 min" / "45 min"
+// minutes -> "2 h 15 min" / "45 min" (kept for pure logic & tests) + Ukrainian variant + HH:MM:SS countdown
 const duration = min => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h ? (m % 60 ? `${h} h ${m % 60} min` : `${h} h`) : `${m} min`; };
+const durationUk = min => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h ? (m % 60 ? `${h} год ${m % 60} хв` : `${h} год`) : `${m} хв`; };
+const hms = sec => { const s = Math.max(0, Math.floor(sec)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return `${pad(h)}:${pad(m)}:${pad(r)}`; };
+const secondsUntil = (endsAtMin, now) => Math.max(0, (endsAtMin - now.minutes) * 60 - (now.seconds || 0));
 const intervals = day => (day && day.status === 'known' ? day.slots.filter(s => s.type === 'off').map(s => [s.start, s.end]) : []);
 
-const out = { DAY, kyivNow, addDays, clock, clockEnd, merge, dayFromOff, emptyDay, parseSchedule, dayFromParsed, fromYasno, yasnoGroups, fromPasted, align, status, duration, intervals };
+const out = {
+  DAY, kyivNow, addDays, clock, clockEnd, merge, dayFromOff, emptyDay, parseSchedule, dayFromParsed,
+  BEZSVITLA_BASE, BEZSVITLA_REGIONS, bezsvitlaRegion, bezsvitlaQueues, normalizeBezsvitlaQueue, bezsvitlaUrl, fromBezsvitlaHtml, extractCityId,
+  fromYasno, yasnoGroups, fromPasted, align, status, duration, durationUk, hms, secondsUntil, intervals,
+};
 (g.VEGA = g.VEGA || {}).outage = out;
 if (typeof module !== 'undefined' && module.exports) module.exports = out;
 })(typeof globalThis !== 'undefined' ? globalThis : this);

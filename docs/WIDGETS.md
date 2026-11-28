@@ -23,7 +23,7 @@ Sizes are grid cells (the board is 12 columns wide, 8 rows visible). A tile can 
 | Tasks | `tasks` | 3×5 | 2×2 | 8×12 | `tasks` (shared by all task tiles) |
 | Notes | `notes` | 4×3 | 2×2 | 12×12 | `data[tileId].text` |
 | Links | `links` | 5×3 | 2×1 | 12×12 | `groups` (shared), `cfg.tab` per tile |
-| Outages | `outage` | 3×3 | 2×2 | 6×6 | `cfg` per tile, cache `hud.outage` |
+| Outages | `outage` | 3×3 | 2×2 | 12×8 | `cfg` per tile, cache `hud.outage` |
 
 ### Clock ✅
 Large time with seconds, the date, and a thin bar showing how much of the day has passed.
@@ -60,15 +60,15 @@ Groups of links. Each tile shows all groups, or only one tab (set in edit mode w
 - Keyboard: `Enter` goes inside; arrows or `h j k l` move to the nearest link in that direction; `Enter` opens it, `Ctrl+Enter` opens a new tab.
 
 ### Outages ✅
-Whether the power is on right now, when that changes next, and today's and tomorrow's schedule on a 24-hour bar with a marker for the current time. Times are Kyiv time.
+Whether the power is on right now, live second-by-second countdown to the next change, and today's and tomorrow's schedule (Kyiv time).
 - **Sources (per tile):**
-  - *Yasno*: automatic for the operators Yasno publishes (Kyiv, Dnipro today). Pick region, operator and group once; the schedule refreshes every 15 minutes and is cached, so the last known schedule is still shown offline.
-  - *Paste a schedule*: works for any region. Paste the text from a Telegram bot or the operator's site; VEGA reads the time ranges (`00:00 - 08:00`, `з 14:00 до 18:30`), understands "today"/"tomorrow" lines and 🔴/🟢 hints, and can treat the times as outages or as power-on periods. A pasted schedule is dated; after midnight "tomorrow" becomes "today", and an older paste asks for a fresh one.
-- **Why not every operator automatically:** most regional operators publish only on their own site, and some of those sites block automated access. VEGA does not try to get around that. Open data sources are added as adapters when they exist (see the planned entry below).
-- **Settings:** open with the tile menu (`m` → *Configure…*), `Enter` on an unconfigured tile, or the command bar.
-- **Config (`cfg`):** `source` (`yasno` | `paste`), `region`, `dso`, `group` for Yasno; `paste` (`date`, `today`, `tomorrow`, `savedAt`, `raw`, `meaning`) for pasted text.
-- **Permissions:** optional host permission for `https://app.yasno.ua/*`, asked only when you choose Yasno. Pasted schedules need nothing.
-- **Layouts:** one line (state and time to the next change) → plus the 24 h bar → plus hour labels → plus today and tomorrow lists and the update age.
+  - *bezsvitla.com.ua* (default): automatic for all regions of Ukraine (`kyiv`, 21 active oblasts, 3 limited oblasts), with optional address-based queue detection (Kyiv and cities with street data) and queue dropdown/manual fallback. Refreshes every 15 minutes and caches offline. Includes a clickable source link to `bezsvitla.com.ua` in the footer.
+  - *Yasno*: automatic for the operators Yasno publishes (Kyiv, Dnipro).
+  - *Paste a schedule*: works for any region by pasting text from a Telegram bot or operator site.
+- **Settings:** open with the tile menu (`m` → *Налаштувати…*), `Enter` on an unconfigured tile, or the command bar.
+- **Config (`cfg`):** `source` (`bezsvitla` | `yasno` | `paste`), `regionSlug`, `regionName`, `queue`, `cityId`, `cityName`, `sourceUrl` for bezsvitla.com.ua; `region`, `dso`, `group` for Yasno; `paste` (`date`, `today`, `tomorrow`, `savedAt`, `raw`, `meaning`) for pasted text.
+- **Permissions:** optional host permission for `https://bezsvitla.com.ua/*` (or `https://app.yasno.ua/*`), asked on save/search via `ensureOrigin()`. Pasted schedules need nothing.
+- **Layouts:** vertical card view (live countdown pill, today/tomorrow tabs, slot rows with active slot highlighted) on portrait/square tiles → horizontal timeline (segmented 24h bar with explicit start/end boundary labels at every zone transition + today/tomorrow summary) on wide/short tiles → compact strip on minimal heights.
 - **Keyboard:** `Enter` refreshes, or opens the setup dialog when unconfigured.
 
 ---

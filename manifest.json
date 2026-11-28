@@ -29,6 +29,7 @@
     "sessions"
   ],
   "optional_host_permissions": [
+    "https://bezsvitla.com.ua/*",
     "https://geocoding-api.open-meteo.com/*",
     "https://app.yasno.ua/*"
   ],

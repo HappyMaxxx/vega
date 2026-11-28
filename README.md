@@ -133,6 +133,7 @@ VEGA collects nothing. Data stays in your browser.
 | --- | --- | --- |
 | `https://api.open-meteo.com/*` | yes | The weather tile. Sends only the coordinates you set. |
 | `https://geocoding-api.open-meteo.com/*` | optional | Finding a city by name in Settings. Asked the first time you search. |
+| `https://bezsvitla.com.ua/*` | optional | The outages widget, universal Ukrainian schedule & address lookup source. Asked when you configure it. |
 | `https://app.yasno.ua/*` | optional | The outages widget, Yasno source. Asked when you choose it. |
 | `tabs`, `bookmarks`, `history` | optional | Searching them from the command bar. Asked when you enable it. |
 | `sessions` | optional | Hiding the helper tab of "Focus the page" from recently closed tabs. Asked when you enable it. |

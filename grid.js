@@ -12,7 +12,7 @@ const META = {
   tasks:   { def: [3, 5], min: [2, 2], max: [8, 12] },
   notes:   { def: [4, 3], min: [2, 2], max: [12, 12] },
   links:   { def: [5, 3], min: [2, 1], max: [12, 12] },
-  outage:  { def: [3, 3], min: [2, 2], max: [6, 6] },
+  outage:  { def: [3, 3], min: [2, 2], max: [12, 8] },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));

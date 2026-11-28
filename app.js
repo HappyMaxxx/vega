@@ -701,14 +701,68 @@ MODULES.links.render = (body, ctx) => {
   return { refresh: draw, enter: () => { const a = body.querySelector('a.lk'); if (!a) return false; a.focus(); } };
 };
 
-/* ═════════════ outages: when the power is on (Yasno automatically, or a schedule you paste) ═════════════ */
+/* ═════════════ outages: bezsvitla.com.ua (all regions), Yasno, or pasted schedule ═════════════ */
 const OU = VEGA.outage;
+const BEZSVITLA = OU.BEZSVITLA_BASE, BEZSVITLA_ORIGIN = 'https://bezsvitla.com.ua/*';
 const YASNO = 'https://app.yasno.ua/api/blackout-service/public/shutdowns', YASNO_ORIGIN = 'https://app.yasno.ua/*';
-const OKEY = 'hud.outage';                                      // tiny cache: { "<region>.<dso>.<group>": { ts, data } }
+const OKEY = 'hud.outage';                                      // cache: { "<key>": { ts, data } }
 const outageCache = {
   read() { try { return JSON.parse(localStorage.getItem(OKEY)) || {}; } catch { return {}; } },
   write(c) { try { localStorage.setItem(OKEY, JSON.stringify(c)); } catch { /* storage full or blocked */ } },
 };
+const hasOrigin = origin => !isExt || !api.permissions || !api.permissions.contains
+  ? Promise.resolve(true)
+  : api.permissions.contains({ origins: [origin] }).catch(() => false);
+
+function ouIcon(type) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const s = document.createElementNS(ns, 'svg');
+  s.setAttribute('viewBox', '0 0 16 16');
+  s.setAttribute('aria-hidden', 'true');
+  const add = (tag, attrs) => {
+    const el = document.createElementNS(ns, tag);
+    for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+    s.append(el);
+  };
+  if (type === 'on') {
+    add('path', { d: 'M8 2.2v1.2M3.8 4l.8.8M12.2 4l-.8.8M5.4 10.6c-.9-.7-1.4-1.7-1.4-2.8a4 4 0 1 1 8 0c0 1.1-.5 2.1-1.4 2.8-.4.3-.6.8-.6 1.3H6c0-.5-.2-1-.6-1.3Z' });
+    add('path', { d: 'M6.4 13.8h3.2' });
+  } else if (type === 'off') {
+    add('path', { d: 'M9.3 2 5.4 8h3.2l-1.9 6 4.7-6.3H8.3L9.3 2Z' });
+    add('path', { d: 'M2.5 2.5 13.5 13.5' });
+  } else {
+    add('circle', { cx: '8', cy: '8', r: '5.5' });
+    add('path', { d: 'M8 5.2v3.3M8 10.8v.2' });
+  }
+  return s;
+}
+
+async function loadBezsvitla(cfg, force) {
+  const cache = outageCache.read(), k = `bz.${cfg.regionSlug}.${cfg.queue}`, hit = cache[k];
+  if (hit && !force && Date.now() - hit.ts < 15 * 60e3) return { data: hit.data, ts: hit.ts };
+  try {
+    const url = OU.bezsvitlaUrl(cfg.regionSlug, cfg.queue);
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.status);
+    const html = await res.text();
+    const todayDate = OU.kyivNow(Date.now()).date;
+    let parsed = OU.fromBezsvitlaHtml(html, cfg.queue, null, todayDate);
+    if (!parsed) throw new Error('parse');
+    if (parsed.days[1].status === 'waiting') {
+      try {
+        const tmRes = await fetch(`${url}/grafik-na-zavtra`);
+        if (tmRes.ok) {
+          const withTm = OU.fromBezsvitlaHtml(html, cfg.queue, await tmRes.text(), todayDate);
+          if (withTm) parsed = withTm;
+        }
+      } catch { /* tomorrow page may be unpublished */ }
+    }
+    cache[k] = { ts: Date.now(), data: parsed };
+    for (const old of Object.keys(cache).sort((a, b) => cache[b].ts - cache[a].ts).slice(8)) delete cache[old];
+    outageCache.write(cache);
+    return { data: parsed, ts: cache[k].ts };
+  } catch { return hit ? { data: hit.data, ts: hit.ts, stale: true } : null; }
+}
 
 async function loadYasno(cfg, force) {
   const cache = outageCache.read(), k = `${cfg.region}.${cfg.dso}.${cfg.group}`, hit = cache[k];
@@ -719,64 +773,172 @@ async function loadYasno(cfg, force) {
     const all = await res.json();
     if (!all[cfg.group]) throw new Error('group');
     cache[k] = { ts: Date.now(), data: { [cfg.group]: all[cfg.group] } };
-    for (const old of Object.keys(cache).sort((a, b) => cache[b].ts - cache[a].ts).slice(6)) delete cache[old];
+    for (const old of Object.keys(cache).sort((a, b) => cache[b].ts - cache[a].ts).slice(8)) delete cache[old];
     outageCache.write(cache);
     return { json: cache[k].data, ts: cache[k].ts };
   } catch { return hit ? { json: hit.data, ts: hit.ts, stale: true } : null; }   // offline: show the last known schedule
 }
 
+function buildTimeline(day, nowMin, showNow, ariaLabel) {
+  const slots = day && day.slots && day.slots.length ? day.slots : [{ start: 0, end: OU.DAY, type: 'unknown' }];
+  const marker = showNow ? h('i', { class: 'ou-now' }) : null;
+  if (marker) marker.style.left = (nowMin / OU.DAY * 100) + '%';
+  const bar = h('div', { class: 'ou-bar', role: 'img', 'aria-label': ariaLabel },
+    slots.map((x, idx) => {
+      const seg = h('i', { class: 'seg ' + x.type + (idx < slots.length - 1 ? ' sep' : ''), title: `${OU.clock(x.start)}–${OU.clockEnd(x.end)}` });
+      seg.style.flex = String(x.end - x.start);
+      return seg;
+    }), marker);
+  // Boundary labels at every zone transition (start and end of each slot).
+  const pts = [];
+  for (const s of slots) {
+    if (!pts.length || pts[pts.length - 1] !== s.start) pts.push(s.start);
+    if (pts[pts.length - 1] !== s.end) pts.push(s.end);
+  }
+  let prevTight = -999;
+  const bounds = h('div', { class: 'ou-bounds', 'aria-hidden': 'true' }, pts.map((m, idx) => {
+    const isStart = idx === 0, isEnd = idx === pts.length - 1;
+    const prev = idx > 0 ? pts[idx - 1] : -999;
+    const tight = !isStart && !isEnd && (m - prev < 110 || (idx < pts.length - 1 && pts[idx + 1] - m < 110));
+    const tier2 = tight && (m - prevTight < 140);
+    if (tight) prevTight = m;
+    const el = h('span', { class: 'ou-bt' + (isStart ? ' start' : isEnd ? ' end' : '') + (tight ? ' tight' : '') + (tier2 ? ' tier2' : ''), text: OU.clockEnd(m) });
+    el.style.left = (m / OU.DAY * 100) + '%';
+    return el;
+  }));
+  return h('div', { class: 'ou-tl' }, bar, bounds);
+}
+
 MODULES.outage.render = (body, ctx) => {
   const it = ctx.it, root = h('div', { class: 'ou' });
   body.append(root);
-  let remote = null, loading = false, failed = false, dead = false, last = '';
-  const ready = () => it.cfg.source === 'paste' ? !!(it.cfg.paste && it.cfg.paste.date) : it.cfg.source === 'yasno' && !!(it.cfg.region && it.cfg.dso && it.cfg.group);
+  let remote = null, loading = false, failed = false, dead = false, last = '', viewDay = 0;
+  let pillEl = null, liveDays = null, liveSt = null;
+  const ready = () => it.cfg.source === 'paste'
+    ? !!(it.cfg.paste && it.cfg.paste.date)
+    : it.cfg.source === 'yasno'
+      ? !!(it.cfg.region && it.cfg.dso && it.cfg.group)
+      : it.cfg.source === 'bezsvitla' && !!(it.cfg.regionSlug && it.cfg.queue);
 
   const schedule = now => {
     if (it.cfg.source === 'paste') return OU.fromPasted(it.cfg.paste, now.date);
     if (!remote) return null;
-    const x = OU.fromYasno(remote.json, it.cfg.group);
-    return x && { ...x, days: OU.align(x.days, now.date), offline: !!remote.stale };   // `stale` is reserved for an old pasted schedule
+    if (it.cfg.source === 'yasno') {
+      const x = OU.fromYasno(remote.json, it.cfg.group);
+      return x && { ...x, days: OU.align(x.days, now.date), offline: !!remote.stale };
+    }
+    const d = remote.data;
+    return d && { ...d, days: OU.align(d.days, now.date), offline: !!remote.stale };
   };
-  const rows = d => d.status === 'known' ? (OU.intervals(d).map(([a, b]) => `${OU.clock(a)}–${OU.clockEnd(b)}`).join('   ') || S.outageNone) : d.status === 'waiting' ? S.outageWaiting : '—';
+  const rows = d => d.status === 'known'
+    ? (OU.intervals(d).map(([a, b]) => `${OU.clock(a)}–${OU.clockEnd(b)}`).join('  ') || S.ou.none)
+    : d.status === 'waiting' ? S.ou.waiting : '—';
+
+  const countdownText = (st, now) => {
+    if (!st || st.kind === 'unknown') return S.ou.status.unknown;
+    if (st.open) return st.kind === 'on' ? S.ou.noMoreToday : S.ou.untilAtLeast(OU.clockEnd(st.endsAt));
+    const hms = OU.hms(OU.secondsUntil(st.endsAt, now));
+    return st.kind === 'off' ? S.ou.untilOn(hms) : st.kind === 'maybe' ? S.ou.untilMaybe(hms) : S.ou.untilOff(hms);
+  };
+
+  const badgeLabel = () => {
+    if (!ready()) return '';
+    if (it.cfg.source === 'paste') return S.ou.pasted;
+    if (it.cfg.source === 'yasno') return S.ou.queue(it.cfg.group);
+    const reg = OU.bezsvitlaRegion(it.cfg.regionSlug);
+    return reg && reg.kind === 'int12' ? S.ou.groupInt(it.cfg.queue) : S.ou.queue(it.cfg.queue);
+  };
 
   const draw = force => {
     const now = OU.kyivNow(Date.now()), sch = ready() ? schedule(now) : null;
-    const key = [now.date, now.minutes, loading, failed, it.cfg.source, it.cfg.group, remote && remote.ts, it.cfg.paste && it.cfg.paste.savedAt, sch && sch.days.map(d => d.status + d.slots.length).join()].join('|');
-    if (!force && key === last) return;                                   // the picture only changes once a minute
+    const key = [now.date, now.minutes, loading, failed, viewDay, it.cfg.source, it.cfg.regionSlug, it.cfg.queue, it.cfg.group, remote && remote.ts, it.cfg.paste && it.cfg.paste.savedAt, sch && sch.days.map(d => d.status + d.slots.length).join()].join('|');
+    if (!force && key === last) {
+      if (pillEl && liveSt) pillEl.textContent = countdownText(liveSt, now);
+      return;
+    }
     last = key;
-    ctx.setStatus(ready() ? (it.cfg.source === 'yasno' ? S.outageGroup(it.cfg.group) : S.outagePasted) : '');
-    if (!ready()) return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: S.outageSetupHint }), h('button', { class: 'btn main', onclick: configure }, S.outageSetup)));
+    pillEl = null; liveDays = null; liveSt = null;
+    ctx.setStatus(badgeLabel());
+    if (!ready()) return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: S.ou.setupHint }), h('button', { class: 'btn main', onclick: configure }, S.ou.setup)));
     if (!sch || sch.stale) {
-      const msg = sch && sch.stale ? S.outageStale : failed ? S.outageFail : S.outageLoading;
-      return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: msg }), failed || (sch && sch.stale) ? h('button', { class: 'btn', onclick: sch && sch.stale ? configure : () => load(true) }, sch && sch.stale ? S.outageSetup : S.outageRetry) : null));
+      const msg = sch && sch.stale ? S.ou.stalePaste : failed ? S.ou.fail : S.ou.loading;
+      return root.replaceChildren(h('div', { class: 'ou-empty' }, h('div', { class: 'note', text: msg }), failed || (sch && sch.stale) ? h('button', { class: 'btn', onclick: sch && sch.stale ? configure : () => load(true) }, sch && sch.stale ? S.ou.setup : S.ou.retry) : null));
     }
     const days = sch.days, st = OU.status(days, now.minutes);
-    const away = OU.duration(st.endsAt - now.minutes);
-    const sub = st.kind === 'off' ? (st.open ? S.outageUntilAtLeast(OU.clockEnd(st.endsAt)) : (st.endsAt >= OU.DAY ? S.outageBackTomorrow : S.outageBack)(OU.clock(st.endsAt), away))
-      : st.kind === 'on' ? (st.open ? S.outageNoMore : (st.endsAt >= OU.DAY ? S.outageNextTomorrow : S.outageNext)(OU.clock(st.endsAt), away)) : '';
-    const marker = h('i', { class: 'ou-now' });
-    marker.style.left = now.minutes / OU.DAY * 100 + '%';
-    const bar = h('div', { class: 'ou-bar', role: 'img', 'aria-label': S.outageToday + ': ' + rows(days[0]) },
-      days[0].slots.map(x => { const i = h('i', { class: 'seg ' + x.type }); i.style.flex = String(x.end - x.start); return i; }), marker);
-    const upd = sch.updated && it.cfg.source === 'yasno' ? Math.round((Date.now() - Date.parse(sch.updated)) / 60e3) : null;
-    root.replaceChildren(
-      h('div', { class: 'ou-head' }, h('i', { class: 'ou-dot ' + st.kind }), h('b', { class: 'ou-st', text: S.outage[st.kind] }), sub ? h('span', { class: 'ou-sub', text: sub }) : null),
-      bar,
-      h('div', { class: 'ou-ticks', 'aria-hidden': 'true' }, ['00', '06', '12', '18', '24'].map(t => h('span', { text: t }))),
+    liveDays = days; liveSt = st;
+    if (viewDay === 1 && (!days[1] || days[1].status !== 'known')) viewDay = 0;
+
+    const away = OU.durationUk(st.endsAt - now.minutes);
+    const sub = st.kind === 'off'
+      ? (st.open ? S.ou.untilAtLeast(OU.clockEnd(st.endsAt)) : (st.endsAt >= OU.DAY ? S.ou.onTomorrowAt : S.ou.onAt)(OU.clock(st.endsAt), away))
+      : st.kind === 'on'
+        ? (st.open ? S.ou.noMoreToday : (st.endsAt >= OU.DAY ? S.ou.offTomorrowAt : S.ou.offAt)(OU.clock(st.endsAt), away))
+        : st.kind === 'maybe' && !st.open
+          ? (st.endsAt >= OU.DAY ? S.ou.offTomorrowAt : S.ou.offAt)(OU.clock(st.endsAt), away)
+          : '';
+
+    const pillCls = 'ou-pill ' + (st.open && st.kind === 'on' ? 'is-open' : 'st-' + st.kind);
+    pillEl = h('div', { class: pillCls, text: countdownText(st, now) });
+
+    // Horizontal view: header + enhanced timeline with explicit boundary times + summary
+    const timeline = buildTimeline(days[0], now.minutes, true, S.ou.today + ': ' + rows(days[0]));
+    const horz = h('div', { class: 'ou-horz' },
+      timeline,
       h('div', { class: 'ou-list' },
-        h('div', {}, h('span', { text: S.outageToday }), h('b', { text: rows(days[0]) })),
-        h('div', {}, h('span', { text: S.outageTomorrow }), h('b', { text: rows(days[1]) })),
-        upd !== null && upd >= 0 ? h('div', { class: 'ou-foot' }, S.outageUpdated(OU.duration(upd))) : null));
+        h('div', {}, h('span', { text: S.ou.today }), h('b', { text: rows(days[0]) })),
+        h('div', {}, h('span', { text: S.ou.tomorrow }), h('b', { text: rows(days[1]) }))));
+
+    // Vertical view: day tabs (if tomorrow is known) + slot cards matching bezsvitla.com.ua
+    const activeDay = days[viewDay] || days[0];
+    const tabs = days[1] && days[1].status === 'known'
+      ? h('div', { class: 'ou-tabs' },
+          h('button', { class: 'ou-tab' + (viewDay === 0 ? ' on' : ''), type: 'button', onclick: () => { viewDay = 0; draw(true); } }, S.ou.today),
+          h('button', { class: 'ou-tab' + (viewDay === 1 ? ' on' : ''), type: 'button', onclick: () => { viewDay = 1; draw(true); } }, S.ou.tomorrow))
+      : null;
+    const slotCards = activeDay.status === 'known' && activeDay.slots.length
+      ? activeDay.slots.map(s => {
+          const isCur = viewDay === 0 && now.minutes >= s.start && now.minutes < s.end;
+          const lbl = s.type === 'off' ? S.ou.slotOff : s.type === 'maybe' ? S.ou.slotMaybe : S.ou.slotOn;
+          return h('div', { class: 'ou-slot st-' + s.type + (isCur ? ' now' : ''), title: lbl },
+            h('span', { class: 'ou-slot-t', text: `${OU.clock(s.start)} – ${OU.clockEnd(s.end)}` }),
+            h('span', { class: 'ou-slot-b st-' + s.type, 'aria-label': lbl }, ouIcon(s.type)));
+        })
+      : [h('div', { class: 'note ou-noslots', text: activeDay.status === 'waiting' ? S.ou.waiting : S.ou.noSlots })];
+    const vert = h('div', { class: 'ou-vert' }, tabs, h('div', { class: 'ou-slots' }, slotCards));
+
+    // Footer: update info + clickable bezsvitla.com.ua source link
+    const updMs = sch.updated ? Date.parse(sch.updated) : NaN;
+    const updMin = Number.isFinite(updMs) ? Math.round((Date.now() - updMs) / 60e3) : null;
+    const metaText = sch.offline ? S.ou.offlineTag
+      : updMin !== null && updMin >= 0 ? S.ou.updated(OU.durationUk(updMin))
+      : it.cfg.source === 'paste' ? S.ou.pasted : '';
+    const srcHref = it.cfg.source === 'bezsvitla'
+      ? (it.cfg.sourceUrl || OU.bezsvitlaUrl(it.cfg.regionSlug, it.cfg.queue))
+      : it.cfg.source === 'yasno' ? 'https://yasno.ua/' : OU.BEZSVITLA_BASE;
+    const srcText = it.cfg.source === 'yasno' ? 'yasno.ua' : S.ou.sourceLink;
+    const foot = h('div', { class: 'ou-foot' },
+      h('span', { class: 'ou-meta', text: metaText }),
+      h('a', { class: 'ou-src', href: safeUrl(srcHref), target: '_blank', rel: 'noopener noreferrer', text: srcText + ' ↗' }));
+
+    root.replaceChildren(
+      h('div', { class: 'ou-head' },
+        h('i', { class: 'ou-dot ' + st.kind }),
+        h('b', { class: 'ou-st', text: S.ou.status[st.kind] }),
+        sub ? h('span', { class: 'ou-sub', text: sub }) : null),
+      pillEl,
+      horz,
+      vert,
+      foot);
   };
 
   const load = async force => {
-    if (it.cfg.source !== 'yasno' || !ready()) return;
+    if (!ready() || it.cfg.source === 'paste') return;
     loading = true; failed = false; draw(true);
-    const res = await loadYasno(it.cfg, force);
+    const res = it.cfg.source === 'yasno' ? await loadYasno(it.cfg, force) : await loadBezsvitla(it.cfg, force);
     if (dead) return;
     loading = false; remote = res; failed = !res; draw(true);
   };
-  const configure = () => configureOutage(it, () => { remote = null; save(); load(true); draw(true); });
+  const configure = () => configureOutage(it, () => { remote = null; viewDay = 0; save(); load(true); draw(true); });
 
   draw(true); load(false);
   const iv = setInterval(() => load(false), 15 * 60e3);
@@ -787,70 +949,231 @@ MODULES.outage.render = (body, ctx) => {
   };
 };
 
-// The dialog that picks the source: Yasno region/operator/group, or pasted text.
+// The dialog that picks the source: bezsvitla.com.ua (all Ukraine + address lookup), Yasno, or pasted text.
 function configureOutage(it, onSaved) {
   const cfg = it.cfg, now = OU.kyivNow(Date.now());
   const sel = (label, cls) => h('select', { class: 'fi ' + (cls || ''), 'aria-label': label });
   const fill = (el, items, cur) => el.replaceChildren(...items.map(([v, t]) => h('option', { value: v, selected: String(v) === String(cur) }, t)));
-  const src = sel(S.outageSource);
-  fill(src, [['yasno', S.outageSrcYasno], ['paste', S.outageSrcPaste]], cfg.source || 'yasno');
+  const src = sel(S.ou.source);
+  fill(src, [['bezsvitla', S.ou.srcBezsvitla], ['yasno', S.ou.srcYasno], ['paste', S.ou.srcPaste]], cfg.source || 'bezsvitla');
 
-  // --- Yasno
-  const regSel = sel(S.outageRegion), dsoSel = sel(S.outageOperator), grpSel = sel(S.outageGroupLabel), ynote = h('div', { class: 'note' });
+  // --- bezsvitla.com.ua (universal + address lookup + manual fallback)
+  const bzReg = sel(S.ou.region), bzQueue = sel(S.ou.queuePick), bzManual = h('input', { class: 'fi', placeholder: S.ou.queueManualPh, 'aria-label': S.ou.queueManual });
+  const bzNote = h('div', { class: 'note' });
+  let pickedCity = cfg.cityId ? { id: cfg.cityId, name: cfg.cityName || '' } : null;
+
+  fill(bzReg, OU.BEZSVITLA_REGIONS.map(r => [r.slug, r.active ? r.name : `${r.name} (обмежено)`]), cfg.regionSlug || 'kyiv');
+  const syncQueues = (preferred) => {
+    const qs = OU.bezsvitlaQueues(bzReg.value);
+    const cur = preferred || cfg.queue || qs[0];
+    fill(bzQueue, qs.map(q => [q, q]), qs.includes(cur) ? cur : qs[0]);
+    bzManual.value = cur;
+  };
+  bzQueue.addEventListener('change', () => { bzManual.value = bzQueue.value; });
+
+  // Locality search (/search-locality?q=...)
+  const cityIn = h('input', { class: 'fi', placeholder: S.ou.citySearchPh, 'aria-label': S.ou.citySearch });
+  if (cfg.cityName) cityIn.value = cfg.cityName;
+  const cityRes = h('div', { class: 'city-res' });
+  const searchCity = async () => {
+    const q = cityIn.value.trim();
+    if (q.length < 2) return;
+    if (!(await ensureOrigin(BEZSVITLA_ORIGIN))) { bzNote.textContent = S.ou.denied; return; }
+    allowBz.hidden = true;
+    cityRes.replaceChildren(h('span', { class: 'note', text: S.ou.loading }));
+    try {
+      const list = await (await fetch(`${BEZSVITLA}/search-locality?q=${encodeURIComponent(q)}`)).json();
+      if (!Array.isArray(list) || !list.length) return cityRes.replaceChildren(h('span', { class: 'note', text: S.ou.citySearchNone }));
+      cityRes.replaceChildren(...list.slice(0, 8).map(item => h('button', {
+        class: 'mi', type: 'button',
+        onclick: () => {
+          const path = (() => { try { return new URL(item.url).pathname.split('/').filter(Boolean); } catch { return []; } })();
+          const slug = path[0] || bzReg.value;
+          if (OU.bezsvitlaRegion(slug)) { bzReg.value = slug; syncQueues(); }
+          pickedCity = item.type === 'місто' ? { id: item.id, name: item.name } : null;
+          cityIn.value = item.name;
+          cityRes.replaceChildren();
+          refreshAddrUi();
+        },
+      }, h('span', { text: item.name }), h('span', { class: 'phn', text: item.type || '' }))));
+    } catch { cityRes.replaceChildren(h('span', { class: 'note', text: S.ou.loadFail })); }
+  };
+  const cityBtn = h('button', { class: 'btn', type: 'button', onclick: searchCity }, S.ou.citySearchBtn);
+  cityIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchCity(); } });
+
+  // Street & building lookup -> auto-detected subqueue
+  const streetIn = h('input', { class: 'fi', placeholder: S.ou.addressStreetPh, 'aria-label': S.ou.addressStreet });
+  const streetRes = h('div', { class: 'city-res' }), houseSel = sel(S.ou.addressHouse), multiBox = h('div', { class: 'row' }), addrMsg = h('div', { class: 'note' });
+  let streetItems = [], buildingItems = [];
+  const applyDetected = q => {
+    const norm = OU.normalizeBezsvitlaQueue(bzReg.value, q);
+    if (!norm) return;
+    const qs = OU.bezsvitlaQueues(bzReg.value);
+    if (qs.includes(norm)) bzQueue.value = norm;
+    bzManual.value = norm;
+    addrMsg.textContent = S.ou.addressDetected(norm);
+  };
+  const pickStreet = async (stItem) => {
+    streetIn.value = stItem.text;
+    streetRes.replaceChildren();
+    multiBox.replaceChildren();
+    addrMsg.textContent = S.ou.loading;
+    try {
+      const url = bzReg.value === 'kyiv'
+        ? `${BEZSVITLA}/street-search-building?id=${encodeURIComponent(stItem.id)}`
+        : `${BEZSVITLA}/street-search-city-street-building?id=${encodeURIComponent(stItem.id)}&city_id=${encodeURIComponent(pickedCity.id)}`;
+      buildingItems = await (await fetch(url)).json();
+      if (!Array.isArray(buildingItems) || !buildingItems.length) {
+        houseSel.replaceChildren();
+        addrMsg.textContent = S.ou.addressUnavailable;
+        return;
+      }
+      fill(houseSel, [['', S.ou.addressHousePick], ...buildingItems.map((b, i) => [String(i), b.text])], '');
+      addrMsg.textContent = '';
+    } catch { addrMsg.textContent = S.ou.loadFail; }
+  };
+  const searchStreet = async () => {
+    const term = streetIn.value.trim();
+    if (term.length < 2) return;
+    if (!(await ensureOrigin(BEZSVITLA_ORIGIN))) { addrMsg.textContent = S.ou.denied; return; }
+    allowBz.hidden = true;
+    addrMsg.textContent = S.ou.loading;
+    multiBox.replaceChildren();
+    try {
+      const url = bzReg.value === 'kyiv'
+        ? `${BEZSVITLA}/street-search-street?term=${encodeURIComponent(term)}`
+        : `${BEZSVITLA}/street-search-city-street?term=${encodeURIComponent(term)}&city_id=${encodeURIComponent(pickedCity.id)}`;
+      streetItems = await (await fetch(url)).json();
+      if (!Array.isArray(streetItems) || !streetItems.length) {
+        streetRes.replaceChildren();
+        addrMsg.textContent = pickedCity ? S.ou.addressUnavailable : S.ou.citySearchNone;
+        return;
+      }
+      addrMsg.textContent = '';
+      streetRes.replaceChildren(...streetItems.slice(0, 8).map(s => h('button', {
+        class: 'mi', type: 'button', onclick: () => pickStreet(s),
+      }, h('span', { text: s.text }))));
+    } catch { addrMsg.textContent = S.ou.loadFail; }
+  };
+  const streetBtn = h('button', { class: 'btn', type: 'button', onclick: searchStreet }, S.ou.citySearchBtn);
+  streetIn.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); searchStreet(); } });
+  houseSel.addEventListener('change', () => {
+    multiBox.replaceChildren();
+    const b = buildingItems[+houseSel.value];
+    if (!b) return;
+    const list = Array.isArray(b.subqueues) && b.subqueues.length ? b.subqueues : b.subqueue ? [b.subqueue] : [];
+    if (!list.length) { addrMsg.textContent = S.ou.addressNotFound; return; }
+    if (list.length === 1) return applyDetected(list[0]);
+    applyDetected(list[0]);
+    addrMsg.textContent = S.ou.addressMulti(list);
+    multiBox.replaceChildren(...list.map(q => h('button', { class: 'btn', type: 'button', onclick: () => applyDetected(q) }, q)));
+  });
+
+  const addrWrap = h('div', { class: 'ou-cfg ou-addr' },
+    h('div', { class: 'note', text: S.ou.addressTitle }),
+    h('div', { class: 'row ctl' }, streetIn, streetBtn),
+    streetRes,
+    h('label', { class: 'fr' }, h('span', { text: S.ou.addressHouse }), houseSel),
+    multiBox,
+    addrMsg);
+  const addrHint = h('div', { class: 'note', text: S.ou.addressUnavailable });
+  const refreshAddrUi = () => {
+    const canAddr = bzReg.value === 'kyiv' || !!(pickedCity && pickedCity.id);
+    addrWrap.hidden = !canAddr;
+    addrHint.hidden = canAddr;
+    streetRes.replaceChildren(); multiBox.replaceChildren(); houseSel.replaceChildren(); addrMsg.textContent = '';
+  };
+  bzReg.addEventListener('change', () => { pickedCity = null; syncQueues(); refreshAddrUi(); });
+
+  const allowBz = h('button', { class: 'btn main', type: 'button', onclick: async () => {
+    if (await ensureOrigin(BEZSVITLA_ORIGIN)) { allowBz.hidden = true; bzNote.textContent = ''; }
+    else bzNote.textContent = S.ou.denied;
+  } }, S.ou.allowBezsvitla);
+  const bzPanel = h('div', { class: 'ou-cfg' },
+    allowBz,
+    h('label', { class: 'fr' }, h('span', { text: S.ou.region }), bzReg),
+    h('label', { class: 'fr' }, h('span', { text: S.ou.citySearch }), h('div', { class: 'row ctl' }, cityIn, cityBtn)),
+    cityRes,
+    addrWrap,
+    addrHint,
+    h('label', { class: 'fr' }, h('span', { text: S.ou.queuePick }), bzQueue),
+    h('label', { class: 'fr' }, h('span', { text: S.ou.queueManual }), bzManual),
+    bzNote);
+  syncQueues(cfg.source === 'bezsvitla' ? cfg.queue : '');
+  refreshAddrUi();
+
+  // --- Yasno (compatibility fallback)
+  const regSel = sel(S.ou.region), dsoSel = sel(S.ou.operator), grpSel = sel(S.ou.groupLabel), ynote = h('div', { class: 'note' });
   let regions = [];
   const loadGroups = async () => {
     if (!regSel.value || !dsoSel.value) return;
     try { fill(grpSel, OU.yasnoGroups(await (await fetch(`${YASNO}/regions/${regSel.value}/dsos/${dsoSel.value}/planned-outages`)).json()).map(g => [g, g]), cfg.group); ynote.textContent = ''; }
-    catch { ynote.textContent = S.outageRegionsFail; }
+    catch { ynote.textContent = S.ou.loadFail; }
   };
   const showDsos = () => { const rg = regions.find(x => String(x.id) === regSel.value); fill(dsoSel, (rg ? rg.dsos : []).map(d => [d.id, d.name]), cfg.dso); return loadGroups(); };
   regSel.addEventListener('change', showDsos); dsoSel.addEventListener('change', loadGroups);
   const loadRegions = async () => {
     try {
       regions = await (await fetch(`${YASNO}/addresses/v2/regions`)).json();
-      fill(regSel, regions.map(x => [x.id, x.value]), cfg.region); ynote.textContent = ''; await showDsos(); allow.hidden = true;
-    } catch { ynote.textContent = S.outageRegionsFail; }
+      fill(regSel, regions.map(x => [x.id, x.value]), cfg.region); ynote.textContent = ''; await showDsos(); allowYasno.hidden = true;
+    } catch { ynote.textContent = S.ou.loadFail; }
   };
-  const allow = h('button', { class: 'btn main', type: 'button', onclick: async () => { if (await ensureOrigin(YASNO_ORIGIN)) loadRegions(); else ynote.textContent = S.outageDenied; } }, S.outageLoadRegions);
-  const yasnoPanel = h('div', { class: 'ou-cfg' }, allow, h('label', { class: 'fr' }, h('span', { text: S.outageRegion }), regSel), h('label', { class: 'fr' }, h('span', { text: S.outageOperator }), dsoSel),
-    h('label', { class: 'fr' }, h('span', { text: S.outageGroupLabel }), grpSel), ynote);
+  const allowYasno = h('button', { class: 'btn main', type: 'button', onclick: async () => { if (await ensureOrigin(YASNO_ORIGIN)) loadRegions(); else ynote.textContent = S.ou.denied; } }, S.ou.allowYasno);
+  const yasnoPanel = h('div', { class: 'ou-cfg' }, allowYasno, h('label', { class: 'fr' }, h('span', { text: S.ou.region }), regSel), h('label', { class: 'fr' }, h('span', { text: S.ou.operator }), dsoSel),
+    h('label', { class: 'fr' }, h('span', { text: S.ou.groupLabel }), grpSel), ynote);
 
-  // --- pasted text
-  const ta = h('textarea', { class: 'fi', rows: 7, spellcheck: 'false', placeholder: S.outagePastePlaceholder, 'aria-label': S.outagePasteLabel });
+  // --- pasted text (manual fallback)
+  const ta = h('textarea', { class: 'fi', rows: 7, spellcheck: 'false', placeholder: S.ou.pastePh, 'aria-label': S.ou.pasteLabel });
   ta.value = (cfg.paste && cfg.paste.raw) || '';
-  const meaning = sel(S.outageMeaning); fill(meaning, [['off', S.outageMeaningOff], ['on', S.outageMeaningOn]], (cfg.paste && cfg.paste.meaning) || 'off');
+  const meaning = sel(S.ou.meaning); fill(meaning, [['off', S.ou.meaningOff], ['on', S.ou.meaningOn]], (cfg.paste && cfg.paste.meaning) || 'off');
   const found = h('div', { class: 'note' });
   const parse = () => OU.parseSchedule(ta.value, meaning.value);
   const preview = () => {
     const p = parse(), fmt = list => list.map(i => `${OU.clock(i.from)}–${OU.clockEnd(i.to)}`).join(', ');
-    found.textContent = S.outageFound(p.found, fmt(p.days.today), fmt(p.days.tomorrow));
+    found.textContent = S.ou.found(p.found, fmt(p.days.today), fmt(p.days.tomorrow));
   };
   ta.addEventListener('input', preview); meaning.addEventListener('change', preview);
-  const pastePanel = h('div', { class: 'ou-cfg' }, h('div', { class: 'note', text: S.outagePasteHelp }), ta, h('label', { class: 'fr' }, h('span', { text: S.outageMeaning }), meaning), found);
+  const pastePanel = h('div', { class: 'ou-cfg' }, h('div', { class: 'note', text: S.ou.pasteHelp }), ta, h('label', { class: 'fr' }, h('span', { text: S.ou.meaning }), meaning), found);
 
-  const showPanel = () => { yasnoPanel.hidden = src.value !== 'yasno'; pastePanel.hidden = src.value !== 'paste'; };
+  const showPanel = () => {
+    bzPanel.hidden = src.value !== 'bezsvitla';
+    yasnoPanel.hidden = src.value !== 'yasno';
+    pastePanel.hidden = src.value !== 'paste';
+  };
   src.addEventListener('change', showPanel); showPanel(); preview();
 
-  const done = () => {
-    if (src.value === 'yasno') {
-      if (!regSel.value || !dsoSel.value || !grpSel.value) return toast(S.outageChooseAll);
+  const done = async () => {
+    if (src.value === 'bezsvitla') {
+      if (!(await ensureOrigin(BEZSVITLA_ORIGIN))) return toast(S.ou.denied);
+      const q = OU.normalizeBezsvitlaQueue(bzReg.value, bzManual.value.trim() || bzQueue.value);
+      if (!bzReg.value || !q) return toast(S.ou.chooseQueue);
+      const reg = OU.bezsvitlaRegion(bzReg.value);
+      Object.assign(cfg, {
+        source: 'bezsvitla',
+        regionSlug: bzReg.value,
+        regionName: reg ? reg.name : bzReg.value,
+        queue: q,
+        cityId: pickedCity ? pickedCity.id : 0,
+        cityName: pickedCity ? pickedCity.name : '',
+        sourceUrl: OU.bezsvitlaUrl(bzReg.value, q),
+      });
+    } else if (src.value === 'yasno') {
+      if (!(await ensureOrigin(YASNO_ORIGIN))) return toast(S.ou.denied);
+      if (!regSel.value || !dsoSel.value || !grpSel.value) return toast(S.ou.chooseAll);
       Object.assign(cfg, { source: 'yasno', region: +regSel.value, dso: +dsoSel.value, group: grpSel.value });
     } else {
       const p = parse();
-      if (!p.found) return toast(S.outageFound(0));
+      if (!p.found) return toast(S.ou.found(0));
       cfg.source = 'paste';
       cfg.paste = { date: now.date, today: p.days.today, tomorrow: p.days.tomorrow, savedAt: new Date().toISOString(), raw: ta.value.slice(0, 4000), meaning: meaning.value };
     }
     closeLayer(); onSaved();
   };
-  openModal(S.outageTitle, [h('label', { class: 'fr' }, h('span', { text: S.outageSource }), src), yasnoPanel, pastePanel],
+  openModal(S.ou.title, [h('label', { class: 'fr' }, h('span', { text: S.ou.source }), src), bzPanel, yasnoPanel, pastePanel],
     [h('button', { class: 'btn', onclick: closeLayer }, S.cancel), h('button', { class: 'btn main', onclick: done }, S.save)]);
 
-  // Load the region list at once when it is allowed already (or on a plain page); otherwise wait for the button.
-  (async () => {
-    const granted = !isExt || !api.permissions || !api.permissions.contains ? true : await api.permissions.contains({ origins: [YASNO_ORIGIN] }).catch(() => false);
-    if (granted) loadRegions();
-  })();
+  hasOrigin(BEZSVITLA_ORIGIN).then(ok => { allowBz.hidden = ok; });
+  hasOrigin(YASNO_ORIGIN).then(ok => { if (ok) loadRegions(); });
 }
 
 /* ═════════════ fuzzy search ═════════════ */
