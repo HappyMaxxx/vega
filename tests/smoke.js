@@ -447,9 +447,9 @@ describe('app (jsdom)', () => {
       try {
         await settle();
         const el = tile(a), t = el.textContent;
-        assert.match(t, /Світло є/);
-        assert.match(t, /Вимкнуть о 14:30 \(через 7 год 30 хв\)/);
-        assert.match(el.querySelector('.ou-pill').textContent, /До вимкнення — 07:30:00/);
+        assert.match(t, /Power on/);
+        assert.match(t, /Off at 14:30 \(in 7 h 30 min\)/);
+        assert.match(el.querySelector('.ou-pill').textContent, /Power off in 07:30:00/);
         assert.equal(el.querySelectorAll('.ou-slot').length, 3);
         assert.equal(el.querySelector('.ou-slot.now .ou-slot-t').textContent, '00:00 – 14:30');
         assert.deepEqual([...el.querySelectorAll('.ou-bt')].map(x => x.textContent), ['00:00', '14:30', '18:00', '24:00']);
@@ -475,8 +475,8 @@ describe('app (jsdom)', () => {
       });
       try {
         await settle();
-        assert.match(tile(a).textContent, /Світло є/);
-        assert.match(tile(a).textContent, /офлайн/);
+        assert.match(tile(a).textContent, /Power on/);
+        assert.match(tile(a).textContent, /offline/);
       } finally { await a.close(); }
     });
 
@@ -485,9 +485,9 @@ describe('app (jsdom)', () => {
       try {
         await settle();
         const t = tile(a).textContent;
-        assert.match(t, /Світла немає/); assert.match(t, /Увімкнуть о 09:00 \(через 2 год\)/);
-        assert.match(t, /До увімкнення — 02:00:00/);
-        assert.match(t, /05:30–09:00\s+14:30–19:30/); assert.match(t, /ще не опубліковано/);
+        assert.match(t, /Power off/); assert.match(t, /On at 09:00 \(in 2 h\)/);
+        assert.match(t, /Power on in 02:00:00/);
+        assert.match(t, /05:30–09:00\s+14:30–19:30/); assert.match(t, /not published yet/);
         assert.ok(urls.some(u => u.endsWith('/regions/25/dsos/902/planned-outages')));
         assert.equal(tile(a).querySelectorAll('.ou-bar .seg').length, 5);
         assert.match(a.w.localStorage.getItem('hud.outage'), /"25\.902\.1\.1"/, 'cached for offline use');
@@ -497,7 +497,7 @@ describe('app (jsdom)', () => {
     test('offline: the cached Yasno schedule is still shown', async () => {
       const fx = withTile({ source: 'yasno', region: 25, dso: 902, group: '1.1' });
       const a = await boot(fx, w => { env()(w); w.localStorage.setItem('hud.outage', JSON.stringify({ '25.902.1.1': { ts: 1, data: { '1.1': JSON.parse(yasno())['1.1'] } } })); w.fetch = async () => { throw new Error('offline'); }; });
-      try { await settle(); assert.match(tile(a).textContent, /Світла немає/); assert.doesNotMatch(tile(a).textContent, /Вставте актуальний/); } finally { await a.close(); }
+      try { await settle(); assert.match(tile(a).textContent, /Power off/); assert.doesNotMatch(tile(a).textContent, /Paste today/); } finally { await a.close(); }
     });
 
     test('unconfigured tile defaults to bezsvitla; address lookup detects subqueue and requests origin on save', async () => {
@@ -514,16 +514,16 @@ describe('app (jsdom)', () => {
       });
       try {
         const d = a.w.document; await settle();
-        assert.match(tile(a).textContent, /Налаштувати/);
+        assert.match(tile(a).textContent, /Set up/);
         tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true }));
         a.key('Enter'); await settle();
         assert.ok(d.querySelector('.mbox'));
         // Search Kyiv street -> building -> auto-detected queue 19.1
-        const streetIn = d.querySelector('input[aria-label="Вулиця"]');
+        const streetIn = d.querySelector('input[aria-label="Street"]');
         streetIn.value = 'Хрещатик';
         streetIn.nextElementSibling.click(); await settle();
         d.querySelector('.ou-addr .city-res button').click(); await settle();
-        const houseSel = d.querySelector('select[aria-label="Будинок"]');
+        const houseSel = d.querySelector('select[aria-label="House"]');
         houseSel.value = '0'; houseSel.dispatchEvent(new a.w.Event('change'));
         assert.match(d.querySelector('.ou-addr').textContent, /19\.1/);
         [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
@@ -546,9 +546,9 @@ describe('app (jsdom)', () => {
         const d = a.w.document; await settle();
         tile(a).dispatchEvent(new a.w.Event('pointerdown', { bubbles: true }));
         a.key('Enter'); await settle();
-        const reg = d.querySelector('select[aria-label="Область / місто"]');
+        const reg = d.querySelector('select[aria-label="Region / city"]');
         reg.value = 'lvivska-oblast'; reg.dispatchEvent(new a.w.Event('change'));
-        d.querySelector('input[aria-label="Або вкажіть вручну"]').value = '3.1';
+        d.querySelector('input[aria-label="Or enter it manually"]').value = '3.1';
         [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
         // Permission denied -> modal remains open
         assert.ok(d.querySelector('.mbox'));
@@ -569,7 +569,7 @@ describe('app (jsdom)', () => {
         [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
         const cfg = a.saved().ws[3].items.find(i => i.type === 'outage').cfg;
         assert.deepEqual([cfg.source, cfg.region, cfg.dso, cfg.group], ['yasno', 25, 902, '2.1']);
-        assert.match(tile(a).textContent, /Світл/);
+        assert.match(tile(a).textContent, /Power/);
       } finally { await a.close(); }
     });
 
@@ -582,14 +582,14 @@ describe('app (jsdom)', () => {
         const src = d.querySelector('.mbox select'); src.value = 'paste'; src.dispatchEvent(new a.w.Event('change'));
         const ta = d.querySelector('.mbox textarea');
         ta.value = 'Today\n🔴 02:00 - 06:30\n🔴 15:00 - 19:00\nTomorrow\n🔴 08:00 - 12:00'; ta.dispatchEvent(new a.w.Event('input'));
-        const foundNote = [...d.querySelectorAll('.mbox .ou-cfg:not([hidden]) .note')].find(n => n.textContent.includes('Знайдено'));
+        const foundNote = [...d.querySelectorAll('.mbox .ou-cfg:not([hidden]) .note')].find(n => n.textContent.includes('Intervals found'));
         assert.ok(foundNote, 'found note exists');
-        assert.match(foundNote.textContent, /Знайдено інтервалів: 3/);
+        assert.match(foundNote.textContent, /Intervals found: 3/);
         [...d.querySelectorAll('.mf button')].find(b => b.textContent === 'Save').click(); await settle();
         const cfg = a.saved().ws[3].items.find(i => i.type === 'outage').cfg;
         assert.equal(cfg.source, 'paste'); assert.equal(cfg.paste.date, '2026-11-27'); assert.equal(cfg.paste.today.length, 2); assert.equal(cfg.paste.tomorrow.length, 1);
         const t = tile(a).textContent;
-        assert.match(t, /Світло є/); assert.match(t, /Вимкнуть о 15:00 \(через 8 год\)/); assert.match(t, /08:00–12:00/);
+        assert.match(t, /Power on/); assert.match(t, /Off at 15:00 \(in 8 h\)/); assert.match(t, /08:00–12:00/);
       } finally { await a.close(); }
     });
 
@@ -607,7 +607,7 @@ describe('app (jsdom)', () => {
 
     test('an old pasted schedule asks for a fresh one instead of showing stale data', async () => {
       const a = await boot(withTile({ source: 'paste', paste: { date: '2026-11-20', today: [{ from: 0, to: 60, type: 'off' }], tomorrow: [] } }), env());
-      try { await settle(); assert.match(tile(a).textContent, /Вставте актуальний графік на сьогодні/); } finally { await a.close(); }
+      try { await settle(); assert.match(tile(a).textContent, /Paste today's schedule/); } finally { await a.close(); }
     });
 
     test('the tile menu has Configure… only for widgets that can be configured', async () => {
@@ -898,7 +898,7 @@ describe('outage logic', () => {
 
   test('duration and clock formatting', () => {
     assert.equal(O.duration(135), '2 h 15 min'); assert.equal(O.duration(45), '45 min'); assert.equal(O.duration(120), '2 h');
-    assert.equal(O.durationUk(135), '2 год 15 хв'); assert.equal(O.durationUk(45), '45 хв'); assert.equal(O.durationUk(120), '2 год');
+    assert.equal(O.durationText(135), '2 h 15 min'); assert.equal(O.durationText(45), '45 min'); assert.equal(O.durationText(120), '2 h');
     assert.equal(O.hms(6136), '01:42:16');
     assert.equal(O.clock(1440 + 185), '03:05'); assert.equal(O.clockEnd(1440), '24:00');
   });

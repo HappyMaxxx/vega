@@ -20,6 +20,7 @@ There is no build step. Edit the files and reload the page (open `index.html`, o
 - **Hotkeys use `event.code`** (physical keys), never `event.key` for letters, so they work in every keyboard layout.
 - **Keyboard parity.** Every mouse action needs a keyboard path and the other way round.
 - **Strings live in `strings.js`.** No user-visible text elsewhere.
+- **All UI text is English.** Labels, menus, region names, errors and docs. Cyrillic is allowed only where it is functional (parsing keywords, API values, the keyboard-layout map).
 - **Colours come from theme tokens.** Literal colours belong only in `themes.css` (and user data). Every theme must keep WCAG AA contrast for text; the tests check it.
 - **Data changes are additive.** Extend `normalize()` in `state.js`, keep old data working, never drop unknown fields, never wipe user data. Storage keys do not change.
 - **Performance.** A new tab must render instantly from `localStorage`. No work that delays first paint. Respect `prefers-reduced-motion`.

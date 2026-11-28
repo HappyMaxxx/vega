@@ -81,31 +81,31 @@ function dayFromParsed(date, intervals) {
 /* ───────────── bezsvitla.com.ua catalog & HTML parser ───────────── */
 const BEZSVITLA_BASE = 'https://bezsvitla.com.ua';
 const BEZSVITLA_REGIONS = [
-  { slug: 'kyiv', name: 'м. Київ', kind: 'kyiv60', active: true, hasStreets: true },
-  { slug: 'kyivska-oblast', name: 'Київська область', kind: 'sub', active: true },
-  { slug: 'lvivska-oblast', name: 'Львівська область', kind: 'sub', active: true },
-  { slug: 'dnipropetrovska-oblast', name: 'Дніпропетровська область', kind: 'sub', active: true },
-  { slug: 'odeska-oblast', name: 'Одеська область', kind: 'sub', active: true },
-  { slug: 'kharkivska-oblast', name: 'Харківська область', kind: 'sub', active: true },
-  { slug: 'vinnytska-oblast', name: '\u0412\u0456\u043d\u043d\u0438\u0446\u044c\u043a\u0430 область', kind: 'sub', active: true },
-  { slug: 'volynska-oblast', name: 'Волинська область', kind: 'sub', active: true },
-  { slug: 'zhytomyrska-oblast', name: 'Житомирська область', kind: 'sub', active: true },
-  { slug: 'zakarpatska-oblast', name: 'Закарпатська область', kind: 'sub', active: true },
-  { slug: 'zaporizka-oblast', name: 'Запорізька область', kind: 'sub', active: true },
-  { slug: 'ivano-frankivska-oblast', name: 'Івано-Франківська область', kind: 'sub', active: true },
-  { slug: 'kirovohradska-oblast', name: 'Кіровоградська область', kind: 'sub', active: true },
-  { slug: 'mykolaivska-oblast', name: 'Миколаївська область', kind: 'sub', active: true },
-  { slug: 'poltavska-oblast', name: 'Полтавська область', kind: 'sub', active: true },
-  { slug: 'rivnenska-oblast', name: 'Рівненська область', kind: 'sub', active: true },
-  { slug: 'sumska-oblast', name: 'Сумська область', kind: 'sub', active: true },
-  { slug: 'ternopilska-oblast', name: 'Тернопільська область', kind: 'sub', active: true },
-  { slug: 'khmelnytska-oblast', name: 'Хмельницька область', kind: 'sub', active: true },
-  { slug: 'cherkaska-oblast', name: 'Черкаська область', kind: 'sub', active: true },
-  { slug: 'chernivetska-oblast', name: 'Чернівецька область', kind: 'int12', active: true },
-  { slug: 'chernihivska-oblast', name: 'Чернігівська область', kind: 'sub', active: true },
-  { slug: 'donetska-oblast', name: 'Донецька область', kind: 'sub', active: false },
-  { slug: 'luhanska-oblast', name: 'Луганська область', kind: 'sub', active: false },
-  { slug: 'khersonska-oblast', name: 'Херсонська область', kind: 'sub', active: false },
+  { slug: 'kyiv', name: 'Kyiv city', kind: 'kyiv60', active: true, hasStreets: true },
+  { slug: 'kyivska-oblast', name: 'Kyiv Oblast', kind: 'sub', active: true },
+  { slug: 'lvivska-oblast', name: 'Lviv Oblast', kind: 'sub', active: true },
+  { slug: 'dnipropetrovska-oblast', name: 'Dnipropetrovsk Oblast', kind: 'sub', active: true },
+  { slug: 'odeska-oblast', name: 'Odesa Oblast', kind: 'sub', active: true },
+  { slug: 'kharkivska-oblast', name: 'Kharkiv Oblast', kind: 'sub', active: true },
+  { slug: 'vinnytska-oblast', name: 'Vinn\u0079tsia Oblast', kind: 'sub', active: true },
+  { slug: 'volynska-oblast', name: 'Volyn Oblast', kind: 'sub', active: true },
+  { slug: 'zhytomyrska-oblast', name: 'Zhytomyr Oblast', kind: 'sub', active: true },
+  { slug: 'zakarpatska-oblast', name: 'Zakarpattia Oblast', kind: 'sub', active: true },
+  { slug: 'zaporizka-oblast', name: 'Zaporizhzhia Oblast', kind: 'sub', active: true },
+  { slug: 'ivano-frankivska-oblast', name: 'Ivano-Frankivsk Oblast', kind: 'sub', active: true },
+  { slug: 'kirovohradska-oblast', name: 'Kirovohrad Oblast', kind: 'sub', active: true },
+  { slug: 'mykolaivska-oblast', name: 'Mykolaiv Oblast', kind: 'sub', active: true },
+  { slug: 'poltavska-oblast', name: 'Poltava Oblast', kind: 'sub', active: true },
+  { slug: 'rivnenska-oblast', name: 'Rivne Oblast', kind: 'sub', active: true },
+  { slug: 'sumska-oblast', name: 'Sumy Oblast', kind: 'sub', active: true },
+  { slug: 'ternopilska-oblast', name: 'Ternopil Oblast', kind: 'sub', active: true },
+  { slug: 'khmelnytska-oblast', name: 'Khmelnytskyi Oblast', kind: 'sub', active: true },
+  { slug: 'cherkaska-oblast', name: 'Cherkasy Oblast', kind: 'sub', active: true },
+  { slug: 'chernivetska-oblast', name: 'Chernivtsi Oblast', kind: 'int12', active: true },
+  { slug: 'chernihivska-oblast', name: 'Chernihiv Oblast', kind: 'sub', active: true },
+  { slug: 'donetska-oblast', name: 'Donetsk Oblast', kind: 'sub', active: false },
+  { slug: 'luhanska-oblast', name: 'Luhansk Oblast', kind: 'sub', active: false },
+  { slug: 'khersonska-oblast', name: 'Kherson Oblast', kind: 'sub', active: false },
 ];
 const SUB_QUEUES = ['1.1', '1.2', '2.1', '2.2', '3.1', '3.2', '4.1', '4.2', '5.1', '5.2', '6.1', '6.2'];
 const INT12_QUEUES = Array.from({ length: 12 }, (_, i) => String(i + 1));
@@ -274,7 +274,7 @@ function status(days, nowMin) {
 
 // minutes -> "2 h 15 min" / "45 min" (kept for pure logic & tests) + Ukrainian variant + HH:MM:SS countdown
 const duration = min => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h ? (m % 60 ? `${h} h ${m % 60} min` : `${h} h`) : `${m} min`; };
-const durationUk = min => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h ? (m % 60 ? `${h} год ${m % 60} хв` : `${h} год`) : `${m} хв`; };
+const durationText = min => { const m = Math.max(0, Math.round(min)); const h = Math.floor(m / 60); return h ? (m % 60 ? `${h} h ${m % 60} min` : `${h} h`) : `${m} min`; };
 const hms = sec => { const s = Math.max(0, Math.floor(sec)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return `${pad(h)}:${pad(m)}:${pad(r)}`; };
 const secondsUntil = (endsAtMin, now) => Math.max(0, (endsAtMin - now.minutes) * 60 - (now.seconds || 0));
 const intervals = day => (day && day.status === 'known' ? day.slots.filter(s => s.type === 'off').map(s => [s.start, s.end]) : []);
@@ -282,7 +282,7 @@ const intervals = day => (day && day.status === 'known' ? day.slots.filter(s => 
 const out = {
   DAY, kyivNow, addDays, clock, clockEnd, merge, dayFromOff, emptyDay, parseSchedule, dayFromParsed,
   BEZSVITLA_BASE, BEZSVITLA_REGIONS, bezsvitlaRegion, bezsvitlaQueues, normalizeBezsvitlaQueue, bezsvitlaUrl, fromBezsvitlaHtml, extractCityId,
-  fromYasno, yasnoGroups, fromPasted, align, status, duration, durationUk, hms, secondsUntil, intervals,
+  fromYasno, yasnoGroups, fromPasted, align, status, duration, durationText, hms, secondsUntil, intervals,
 };
 (g.VEGA = g.VEGA || {}).outage = out;
 if (typeof module !== 'undefined' && module.exports) module.exports = out;

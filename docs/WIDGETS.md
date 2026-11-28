@@ -65,7 +65,7 @@ Whether the power is on right now, live second-by-second countdown to the next c
   - *bezsvitla.com.ua* (default): automatic for all regions of Ukraine (`kyiv`, 21 active oblasts, 3 limited oblasts), with optional address-based queue detection (Kyiv and cities with street data) and queue dropdown/manual fallback. Refreshes every 15 minutes and caches offline. Includes a clickable source link to `bezsvitla.com.ua` in the footer.
   - *Yasno*: automatic for the operators Yasno publishes (Kyiv, Dnipro).
   - *Paste a schedule*: works for any region by pasting text from a Telegram bot or operator site.
-- **Settings:** open with the tile menu (`m` → *Налаштувати…*), `Enter` on an unconfigured tile, or the command bar.
+- **Settings:** open with the tile menu (`m` → *Configure…*), `Enter` on an unconfigured tile, or the command bar.
 - **Config (`cfg`):** `source` (`bezsvitla` | `yasno` | `paste`), `regionSlug`, `regionName`, `queue`, `cityId`, `cityName`, `sourceUrl` for bezsvitla.com.ua; `region`, `dso`, `group` for Yasno; `paste` (`date`, `today`, `tomorrow`, `savedAt`, `raw`, `meaning`) for pasted text.
 - **Permissions:** optional host permission for `https://bezsvitla.com.ua/*` (or `https://app.yasno.ua/*`), asked on save/search via `ensureOrigin()`. Pasted schedules need nothing.
 - **Layouts:** vertical card view (live countdown pill, today/tomorrow tabs, slot rows with active slot highlighted) on portrait/square tiles → horizontal timeline (segmented 24h bar with explicit start/end boundary labels at every zone transition + today/tomorrow summary) on wide/short tiles → compact strip on minimal heights.
