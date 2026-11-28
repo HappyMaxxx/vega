@@ -373,6 +373,186 @@ function createAmbient(Ctor, makeAudio) {
   return api;
 }
 
+/* ───────────── air-raid alerts (Ukraine): alerts.in.ua status per oblast, a schematic map, and an estimate
+   derived only from how the alert area has been spreading (no live target feed is publicly available; see
+   docs/WIDGETS.md). Everything here is pure: the fetch, the SVG and the polling live in app.js. ───────────── */
+// Order fixed by the alerts.in.ua API (the 27-character status string): index == position in that string.
+// Coordinates are each oblast's approximate centre, used only for distance and direction, not as a legal boundary.
+const OBLASTS = [
+  { id: 'crimea', name: 'Crimea', lat: 45.3, lon: 34.4 },
+  { id: 'volyn', name: 'Volyn', lat: 50.75, lon: 25.3 },
+  { id: 'vinnytsia', name: 'Vinn\u0079tsia', lat: 49.2, lon: 28.5 },
+  { id: 'dnipropetrovsk', name: 'Dnipropetrovsk', lat: 48.45, lon: 35.0 },
+  { id: 'donetsk', name: 'Donetsk', lat: 48.0, lon: 37.8 },
+  { id: 'zhytomyr', name: 'Zhytomyr', lat: 50.6, lon: 28.7 },
+  { id: 'zakarpattia', name: 'Zakarpattia', lat: 48.4, lon: 23.2 },
+  { id: 'zaporizhzhia', name: 'Zaporizhzhia', lat: 47.3, lon: 35.8 },
+  { id: 'ivano-frankivsk', name: 'Ivano-Frankivsk', lat: 48.7, lon: 24.7 },
+  { id: 'kyiv-city', name: 'Kyiv (city)', lat: 50.45, lon: 30.52 },
+  { id: 'kyiv-oblast', name: 'Kyiv Oblast', lat: 50.6, lon: 30.3 },
+  { id: 'kirovohrad', name: 'Kirovohrad', lat: 48.5, lon: 32.3 },
+  { id: 'luhansk', name: 'Luhansk', lat: 48.9, lon: 39.3 },
+  { id: 'lviv', name: 'Lviv', lat: 49.9, lon: 24.2 },
+  { id: 'mykolaiv', name: 'Mykolaiv', lat: 47.1, lon: 31.6 },
+  { id: 'odesa', name: 'Odesa', lat: 46.6, lon: 30.2 },
+  { id: 'poltava', name: 'Poltava', lat: 49.6, lon: 34.5 },
+  { id: 'rivne', name: 'Rivne', lat: 50.8, lon: 26.4 },
+  { id: 'sevastopol', name: 'Sevastopol', lat: 44.6, lon: 33.5 },
+  { id: 'sumy', name: 'Sumy', lat: 50.9, lon: 34.8 },
+  { id: 'ternopil', name: 'Ternopil', lat: 49.5, lon: 25.6 },
+  { id: 'kharkiv', name: 'Kharkiv', lat: 49.9, lon: 36.3 },
+  { id: 'kherson', name: 'Kherson', lat: 46.6, lon: 33.0 },
+  { id: 'khmelnytskyi', name: 'Khmelnytskyi', lat: 49.4, lon: 26.9 },
+  { id: 'cherkasy', name: 'Cherkasy', lat: 49.3, lon: 31.9 },
+  { id: 'chernivtsi', name: 'Chernivtsi', lat: 48.3, lon: 25.9 },
+  { id: 'chernihiv', name: 'Chernihiv', lat: 51.5, lon: 31.3 },
+];
+const OBLAST_BY_ID = Object.fromEntries(OBLASTS.map((o, i) => [o.id, i]));
+const CODE_LEVEL = { R: 'red', Y: 'yellow', P: 'partial', N: null };          // v2 active_air_raid_alerts_by_oblast.json
+const ALERTS_ENDPOINT = 'https://api.alerts.in.ua/v2/iot/active_air_raid_alerts_by_oblast.json';
+const ALERTS_PINNED_MAX = 6, ALERTS_PLACES_MAX = 8, ALERTS_FRESH_MIN = 90;    // an event older than this no longer drives an estimate
+const THREAT_TYPES = ['drone', 'cruise', 'ballistic'];
+// Typical published speeds (km/h), editable per tile. Rough and public: not a substitute for an official source.
+const THREAT_SPEEDS = { drone: 170, cruise: 880, ballistic: 4800 };
+
+// The 27-char string from the API -> one row per oblast, in the fixed order above.
+function parseOblastString(str) {
+  if (typeof str !== 'string' || str.length !== OBLASTS.length) return null;
+  return OBLASTS.map((o, i) => {
+    const code = str[i], level = CODE_LEVEL[code];
+    return { ...o, idx: i, code, level, active: code !== 'N' && code !== undefined };
+  });
+}
+
+function haversineKm(a, b) {
+  const R = 6371, rad = d => d * Math.PI / 180;
+  const dLat = rad(b.lat - a.lat), dLon = rad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+const minutesRemaining = (distanceKm, speedKmh, elapsedMin) => distanceKm / speedKmh * 60 - elapsedMin;
+const nearestPinnedKm = (idx, pinnedIdx) => pinnedIdx.length ? Math.min(...pinnedIdx.map(p => haversineKm(OBLASTS[idx], OBLASTS[p]))) : null;
+
+// A rough, honestly-banded estimate (±30%) for how soon a spreading alert might reach `targetIdx`, from the most
+// recent still-fresh activation of another oblast. Returns null when there is nothing fresh enough to go on, or
+// when the model already expects the alert to have arrived (an overdue guess is worse than no guess).
+function estimateFromEvents(events, targetIdx, speedKmh, now) {
+  const fresh = events.filter(e => e.idx !== targetIdx && (now - e.at) / 60000 <= ALERTS_FRESH_MIN).sort((a, b) => b.at - a.at);
+  if (!fresh.length) return null;
+  const e = fresh[0], elapsed = (now - e.at) / 60000, remaining = minutesRemaining(haversineKm(OBLASTS[e.idx], OBLASTS[targetIdx]), speedKmh, elapsed);
+  if (remaining <= 0) return null;
+  return { minLeft: Math.max(1, Math.round(remaining * 0.7)), maxLeft: Math.round(remaining * 1.3), fromIdx: e.idx };
+}
+// Same shape, from a threat point and time you set by hand (e.g. from a channel you follow) instead of the alert feed.
+function estimateFromManual(manual, targetIdx, speedKmh, now) {
+  if (!manual || !(manual.idx >= 0)) return null;
+  const elapsed = (now - manual.setAt) / 60000, remaining = minutesRemaining(haversineKm(OBLASTS[manual.idx], OBLASTS[targetIdx]), speedKmh, elapsed);
+  if (remaining <= 0) return null;
+  return { minLeft: Math.max(1, Math.round(remaining * 0.7)), maxLeft: Math.round(remaining * 1.3), fromIdx: manual.idx };
+}
+// 'comfortable' (plenty of margin), 'tight' (cutting it close), 'wait' (would not make it), 'unknown' (no estimate yet).
+const tripCompare = (remainingMin, tripMin, margin = 10) => remainingMin == null ? 'unknown' : tripMin + margin <= remainingMin ? 'comfortable' : tripMin <= remainingMin ? 'tight' : 'wait';
+
+// Equirectangular projection (longitude scaled by latitude, so the shape is not stretched) into a fixed, testable
+// coordinate space. The map in app.js just reads x/y; nothing here touches the DOM.
+const ALERTS_SPACE = { w: 640, h: 440, pad: 24 };
+// The same fixed transform backs projectOblasts() and project(): a point keeps the same x/y either way.
+const ALERTS_XFORM = (() => {
+  const lat0 = 48.4 * Math.PI / 180, cos = Math.cos(lat0);
+  const xs = OBLASTS.map(o => o.lon * cos), ys = OBLASTS.map(o => -o.lat);
+  const x0 = Math.min(...xs), x1 = Math.max(...xs), y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const { w, h, pad } = ALERTS_SPACE, sx = (w - 2 * pad) / (x1 - x0), sy = (h - 2 * pad) / (y1 - y0), s = Math.min(sx, sy);
+  const ox = pad + (w - 2 * pad - (x1 - x0) * s) / 2, oy = pad + (h - 2 * pad - (y1 - y0) * s) / 2;
+  return { cos, x0, y0, s, ox, oy };
+})();
+function projectPoint(lat, lon) {
+  const t = ALERTS_XFORM;
+  return { x: t.ox + (lon * t.cos - t.x0) * t.s, y: t.oy + (-lat - t.y0) * t.s };
+}
+function projectOblasts() {
+  return OBLASTS.map((o, i) => ({ ...o, idx: i, ...projectPoint(o.lat, o.lon) }));
+}
+// Compass bearing (0-360, 0 = north) from a to b, and the signed angular gap between two bearings (-180..180).
+function bearingDeg(a, b) {
+  const rad = d => d * Math.PI / 180, lat1 = rad(a.lat), lat2 = rad(b.lat), dLon = rad(b.lon - a.lon);
+  const y = Math.sin(dLon) * Math.cos(lat2), x = Math.cos(lat1) * Math.sin(lat2) - Math.sin(lat1) * Math.cos(lat2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+const bearingGap = (a, b) => { const d = ((b - a + 540) % 360) - 180; return d; };
+
+// ───── live tracks (optional, off by default): an independent, unofficial OSINT project, not alerts.in.ua ─────
+// kudyletyt.com (Telegram channel t.me/kudy_letyt), built from public Telegram monitoring channels. Its API
+// has no authentication and answers with Access-Control-Allow-Origin: *, but publishes no formal terms of use —
+// treat it as a best-effort community source, shown only when you turn it on, and attributed in the widget. See
+// docs/WIDGETS.md for the full note.
+const TRACKS_ENDPOINT = 'https://api.kudyletyt.com/tracks';
+const TRACK_TYPES = ['drone', 'jet', 'molnia'];
+// Rough, published, editable speeds (km/h) per track type. "jet" = jet-engine ("reactive") Shahed-type drones,
+// faster than propeller ones; "molnia" = a small fast attack drone. All approximate.
+const TRACK_SPEEDS = { drone: 170, jet: 550, molnia: 250 };
+const TRACK_CONE_DEG = 45;                           // how far off a track's heading may be from "straight at you" and still count
+
+// The feed's points are [lon, lat] (GeoJSON order). One row per track, using its most recent observed position.
+function parseTracks(json) {
+  if (!isObj(json) || !Array.isArray(json.tracks)) return null;
+  const rows = [];
+  for (const t of json.tracks) {
+    if (!isObj(t) || !Array.isArray(t.pts) || !t.pts.length) continue;
+    const last = t.pts[t.pts.length - 1];
+    if (!isObj(last) || !Array.isArray(last.pt) || last.pt.length !== 2) continue;
+    const [lon, lat] = last.pt;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) continue;
+    rows.push({
+      id: str(t.id, 20) || 'track', type: TRACK_TYPES.includes(t.type) ? t.type : 'drone',
+      active: t.status === 'active', heading: Number.isFinite(+t.heading) ? ((+t.heading % 360) + 360) % 360 : null,
+      lat, lon, lastSeen: Number.isFinite(+t.lastSeen) ? +t.lastSeen : (Number.isFinite(+last.t) ? +last.t : 0),
+      toward: isObj(t.toward) && typeof t.toward.name === 'string' ? t.toward.name : '',
+    });
+  }
+  return { ts: Date.now(), tracks: rows };
+}
+
+// Does `track`, extrapolated from its last seen position at `speedKmh` along its own heading, look like it could
+// reach oblast `targetIdx`? Only counts a track whose heading points within TRACK_CONE_DEG of the straight line to
+// the target — one actually crossing Ukraine on an unrelated path should not drive an estimate for you.
+function estimateFromTrack(track, targetIdx, speedKmh, now) {
+  if (!track.active || track.heading == null) return null;
+  const target = OBLASTS[targetIdx], toward = bearingDeg(track, target);
+  if (Math.abs(bearingGap(track.heading, toward)) > TRACK_CONE_DEG) return null;
+  const elapsed = (now - track.lastSeen) / 60000;
+  if (elapsed < 0 || elapsed > ALERTS_FRESH_MIN) return null;
+  const remaining = minutesRemaining(haversineKm(track, target), speedKmh, elapsed);
+  if (remaining <= 0) return null;
+  return { minLeft: Math.max(1, Math.round(remaining * .7)), maxLeft: Math.round(remaining * 1.3), trackId: track.id, trackType: track.type };
+}
+
+function alertsCfg(c) {
+  c = isObj(c) ? c : {};
+  const pinned = [...new Set((Array.isArray(c.pinned) ? c.pinned : []).filter(id => id in OBLAST_BY_ID))].slice(0, ALERTS_PINNED_MAX);
+  const speeds = isObj(c.speeds) ? c.speeds : {};
+  const sp = {}; for (const t of THREAT_TYPES) { const v = +speeds[t]; sp[t] = Number.isFinite(v) && v > 0 && v <= 30000 ? v : THREAT_SPEEDS[t]; }
+  const tspeeds = isObj(c.trackSpeeds) ? c.trackSpeeds : {};
+  const tsp = {}; for (const t of TRACK_TYPES) { const v = +tspeeds[t]; tsp[t] = Number.isFinite(v) && v > 0 && v <= 30000 ? v : TRACK_SPEEDS[t]; }
+  const used = new Set(), places = [];
+  for (const p of Array.isArray(c.places) ? c.places : []) {
+    if (!isObj(p) || places.length >= ALERTS_PLACES_MAX) continue;
+    const name = str(p.name, 30), minutes = int(p.minutes, NaN, 1, 600);
+    if (!name || !Number.isFinite(minutes)) continue;
+    let id = /^p[a-z0-9]{3,8}$/.test(p.id || '') ? p.id : 'p' + Math.random().toString(36).slice(2, 7);
+    if (used.has(id)) id = 'p' + Math.random().toString(36).slice(2, 7);
+    used.add(id); places.push({ id, name, minutes });
+  }
+  const manualFrom = typeof c.manualFrom === 'string' && c.manualFrom in OBLAST_BY_ID ? c.manualFrom : '';
+  const manualSetAt = manualFrom !== '' && Number.isFinite(+c.manualSetAt) && +c.manualSetAt > 0 ? +c.manualSetAt : undefined;
+  return {
+    name: str(c.name, 40), token: str(c.token, 200),
+    pinned,
+    focus: c.focus !== false, threat: pick(c.threat, THREAT_TYPES, 'drone'), speeds: sp,
+    useTracks: !!c.useTracks, trackSpeeds: tsp,
+    manualFrom, manualSetAt, places, notify: !!c.notify, sound: !!c.sound,
+  };
+}
+
 const out = {
   CLOCK_STYLES, ALIGN_H, ALIGN_V, DATE_FORMATS, WEIGHTS, clockCfg, clockParts, timeWords, bcd, analogAngles, dateText,
   COMMON_ZONES, validZone, zoneLabel, worldCfg, zoneNow, diffText, DEFAULT_ZONES,
@@ -380,6 +560,10 @@ const out = {
   NBU, nbuDate, parseNbu, convert, ratesCfg, MONO, ISO_NUM, parseMono, BINANCE, QUOTES, parseTicker,
   LINK_LAYOUTS, LINK_ICONS, LINK_SIZES, LINK_COLORS, linksCfg,
   SOUNDS, STREAMS, SYNTH, CUSTOM_MAX, SLEEP_OPTIONS, ambientCfg, createAmbient, noiseData,
+  OBLASTS, OBLAST_BY_ID, CODE_LEVEL, ALERTS_ENDPOINT, ALERTS_PINNED_MAX, ALERTS_PLACES_MAX, ALERTS_FRESH_MIN, THREAT_TYPES, THREAT_SPEEDS,
+  parseOblastString, haversineKm, minutesRemaining, nearestPinnedKm, estimateFromEvents, estimateFromManual, tripCompare,
+  ALERTS_SPACE, projectOblasts, projectPoint, bearingDeg, bearingGap, alertsCfg,
+  TRACKS_ENDPOINT, TRACK_TYPES, TRACK_SPEEDS, TRACK_CONE_DEG, parseTracks, estimateFromTrack,
 };
 (g.VEGA = g.VEGA || {}).w = out;
 if (typeof module !== 'undefined' && module.exports) module.exports = out;

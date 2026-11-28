@@ -443,3 +443,31 @@ textarea.fi { font: 12px/1.45 var(--mono); resize: vertical; }
 .am input[type="range"] { width: 100%; accent-color: var(--accent); height: 18px; margin: 0; }
 .am.on .am-go { background: var(--solid); border-color: var(--line2); color: var(--fg); }
 @container (max-width: 190px) { .am-r { grid-template-columns: minmax(0, 1fr); gap: 0; } .am-i { display: none; } }
+
+/* ───── air-raid alerts (Ukraine) ───── */
+.al { height: 100%; display: flex; flex-direction: column; container-type: size; }
+.al-empty { display: grid; gap: 8px; justify-items: start; align-content: center; height: 100%; padding: 0 14px; }
+.al-map { flex: 1 1 auto; min-height: 0; width: 100%; }
+.al-o { fill: var(--line2); stroke: var(--line); stroke-width: 1; cursor: pointer; }
+.al-o:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.al-o.y { fill: var(--yellow); stroke: var(--yellow); }
+.al-o.p { fill: var(--hot); stroke: var(--hot); }
+.al-o.r { fill: var(--red); stroke: var(--red); }
+.al-o.pin { stroke: var(--accent); stroke-width: 2.5; }
+.al-line { stroke: var(--hot); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.al-info { flex: none; padding: 6px 12px 10px; display: grid; gap: 5px; font-size: 12px; }
+.al-pins { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--dim); }
+.al-pin.al-red { color: var(--red); } .al-pin.al-yellow { color: var(--yellow); } .al-pin.al-partial { color: var(--hot); }
+.al-eta { color: var(--hi); font-weight: 500; } .al-eta.dim { color: var(--dim); font-weight: 400; }
+.al-note { font-size: 11px; }
+.al-places { display: grid; gap: 2px; }
+.al-p-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: baseline; }
+.al-badge { font-size: 11px; white-space: nowrap; }
+.al-badge.al-comfortable { color: var(--green); } .al-badge.al-tight { color: var(--yellow); } .al-badge.al-wait { color: var(--red); } .al-badge.al-unknown { color: var(--dim); }
+@container (max-height: 140px) { .al-map { display: none; } }
+@container (max-width: 200px) { .al-places, .al-note { display: none; } }
+
+/* ───── air-raid alerts: live track markers (optional source) ───── */
+.al-tr { fill: var(--dim); stroke: var(--bg); stroke-width: .5; cursor: default; }
+.al-tr.stale { fill: var(--line2); opacity: .55; }
+.al-tr-jet { fill: var(--hot); } .al-tr-drone { fill: var(--yellow); } .al-tr-molnia { fill: var(--red); }

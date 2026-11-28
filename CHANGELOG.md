@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.6.0
+
+Existing data is kept: every new setting is optional.
+
+### Added
+- **Air-raid alerts widget (Ukraine).** Pin up to 6 oblasts and see their live alert status from [alerts.in.ua](https://alerts.in.ua/) (your own personal token, stored only in your browser) on a schematic map — click a circle to pin or unpin it. A rough, honestly-ranged arrival estimate derives from how the alert area has been spreading between polls, at a speed you pick per threat type; you can also mark a threat point and time by hand. A trip planner compares the estimate against places you might go (*comfortable* / *tight* / *won't make it*). Optional browser notification and sound when a pinned oblast turns active.
+- **Live tracks (optional, off by default).** The alerts widget can also show individual drone/missile tracks from [kudyletyt.com](https://www.kudyletyt.com/), an independent, volunteer-run monitoring project (not alerts.in.ua, not affiliated with VEGA, and without published terms of use — treated as a best-effort source). A track heading your way sharpens the estimate and draws its own line on the map; turning it on asks a separate permission.
+- Every configurable tile's *Configure…* now has a consistent list-editor pattern for add/remove rows (places, custom sounds, events, zones), shared across widgets.
+
+### Changed
+- New optional host permission `https://api.alerts.in.ua/*`, asked only when you save a token.
+- New optional host permission `https://api.kudyletyt.com/*`, asked only if you turn on live tracks.
+- New cache key `hud.alerts` (the last known oblast statuses and, if enabled, tracks — no personal data).
+
+### Known limitations
+- The alerts map is schematic (oblast centre points, not traced borders): VEGA has no licensed boundary data for all 27 oblasts yet.
+- Live tracks come from an unofficial, volunteer-run source with no formal terms; they can be late, incomplete or wrong, and the feature may be adjusted if its maintainers ask.
+- It is a planning aid, not a safety source. Always follow the official alert and the sirens.
+
 ## 0.5.0
 
 Existing data is kept: every new setting is optional and the defaults look exactly like before.
@@ -17,7 +36,7 @@ Existing data is kept: every new setting is optional and the defaults look exact
 ### Changed
 - New optional host permissions for the rates widget: `https://bank.gov.ua/*`, `https://api.monobank.ua/*`, `https://data-api.binance.vision/*`. Nothing new is required at install.
 - New cache key `hud.rates` (exchange rates and prices). It holds no personal data and can be deleted at any time.
-- The air-raid alerts map and the threat ETA calculator move to 0.6.0.
+- The air-raid alerts widget (map with your region in focus, plus an arrival estimate) moves to 0.6.0 as a single widget.
 
 ## 0.4.0
 

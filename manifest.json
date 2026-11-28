@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VEGA",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Tiling start page with modules, hotkeys and a command bar.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -29,6 +29,8 @@
     "sessions"
   ],
   "optional_host_permissions": [
+    "https://api.alerts.in.ua/*",
+    "https://api.kudyletyt.com/*",
     "https://api.monobank.ua/*",
     "https://bank.gov.ua/*",
     "https://data-api.binance.vision/*",

@@ -111,26 +111,30 @@ A mixer of background sounds with one slider each: real recordings (rain, thunde
 
 Each entry says what it needs. Anything that talks to a new host asks for that host permission only when the widget is added or enabled, never at install.
 
+### Air-raid alerts (Ukraine) ✅
+One widget that answers two questions: *where are alerts right now*, and *how soon might one start where I am*, so you can decide whether to go to a shop or café that closes during an alert.
+- **Map and focus:** every oblast as a circle on a schematic map (positioned by its real centre coordinates, not traced boundaries — VEGA has no licensed boundary geometry yet, see *Known limits* below), coloured by its current status (`red` / `yellow` / `partial` / none). Click or (`Tab`, `Enter`/`Space`) a circle to pin or unpin it — that is also how you choose your first oblast. Pinned oblasts get a ring; with *focus* on (the default), the rest of the map dims by distance from the nearest pinned oblast, so your region stays readable. Up to 6 oblasts can be pinned at once.
+- **Alert feed:** [alerts.in.ua](https://alerts.in.ua/), the official per-oblast status API, polled every 30 seconds with a personal token (free for personal use, requested at alerts.in.ua/api-request). The token lives only in `localStorage` and is sent only to that API. The last status is cached and marked *offline* when a poll fails.
+- **Arrival estimate ("ETA"):** two sources, used automatically when they apply:
+  1. *From the alert feed (always available).* How the alert area has been spreading between polls (which oblast went active most recently, how long ago, and the distance to your pinned oblast), at a speed you choose per threat type (an editable table: Shahed-type drone, cruise missile, ballistic missile).
+  2. *From a live track (when "Live tracks" is on and one points at you).* See below — it uses the track's own position, heading and a per-type speed instead of guessing from alert spread, which is usually a tighter, more specific estimate.
+
+  Whichever is sooner is shown, as a ±30% range, labelled with where it came from ("from the alert feed", "from a live jet-powered drone track", …), and only while something fresh enough is still plausible — it disappears rather than show a number that would already be overdue. You can also mark a threat by hand (an oblast and "as of saving now"), for a tip from a channel you follow. A dashed line on the map shows what the shown estimate is based on.
+- **Live tracks (optional, off by default, unofficial):** individual drone/missile markers (type, heading, status) from [kudyletyt.com](https://www.kudyletyt.com/) (Telegram channel [t.me/kudy_letyt](https://t.me/kudy_letyt)), an independent volunteer project built from public monitoring channels — not alerts.in.ua, not affiliated with VEGA. Its API (`api.kudyletyt.com/tracks`) needs no key and answers with `Access-Control-Allow-Origin: *`, but the project publishes no formal terms of use, so this stays an opt-in, best-effort source: turn it on in *Configure…*, which asks its own optional host permission. A track only drives the estimate when it is `active` and its heading points within 45° of your pinned oblast; an arrow on the map shows every track regardless, fainter once it is no longer active. This note will be updated, or the feature adjusted or removed, if the project's maintainers (reachable via the Telegram channel) ask for that.
+- **Trip planner:** save places with the minutes you need to get there; each gets a *comfortable* / *tight* / *won't make it* badge against the current estimate (the pessimistic end of the range, on purpose). It is planning advice, not a safety instruction.
+- **Notifications:** an optional browser notification (and an optional short sound) the moment a *pinned* oblast turns active, once per activation. Both are off by default; enabling asks the ordinary browser notification permission, not a WebExtension one.
+- **Settings (`cfg`):** `token`, `pinned` (oblast ids, up to 6), `focus`, `threat`, `speeds` (editable table), `useTracks`, `trackSpeeds` (editable table: propeller/jet-powered/fast attack drone), `manualFrom`/`manualSetAt`, `places` (name + minutes), `notify`, `sound`, `name`.
+- **Data:** the alerts API (token-gated, polled every 30 s) and, if enabled, the tracks API (polled every 20 s); great-circle maths from built-in oblast centre coordinates otherwise. Cached in `hud.alerts` (`{ oblast, tracks }`).
+- **Permissions:** optional host `https://api.alerts.in.ua/*`, asked when you save a token; optional host `https://api.kudyletyt.com/*`, asked only if you turn on live tracks.
+- **Size:** default 5×4, min 3×3, max 8×8. The map hides on very short tiles (`@container`); the status line and the estimate stay.
+- **Known limits, stated plainly:** the map is schematic (centroids, not real borders) until VEGA has a licensed boundary source for all 27 oblasts. Live tracks come from an unofficial, volunteer-run source with no formal terms and can be late, incomplete or wrong; without them (or with them, but nothing on course) the estimate falls back to alert spread and a speed you pick. Either way it ignores routing, altitude, manoeuvres, and alerts that start with no warning; a ballistic threat leaves minutes or none at all. In-memory alert and track history resets on reload (the current status survives, the history does not). **It is a planning aid, never a safety source — always follow the official alert and the sirens.** The widget repeats this in its own text.
+
+
 ### More outage sources 📋
 Automatic schedules for more regions, as separate adapters behind the same widget.
 - **Custom JSON URL:** point a tile at any URL that serves a documented JSON format (for example a community mirror or your own script). Needs an optional host permission for that host.
 - **Operator adapters:** added only where the operator or a maintained open-data project publishes a stable, permitted feed. Requests for permission or an API go to the site owners first.
 - **Config:** `source: "json"`, `url`, `group`.
-
-### Air-raid alerts map 📋 (target 0.6.0)
-An oblast map coloured by current alert status, with the duration of active alerts and an optional browser notification when your pinned regions change.
-- **Data:** an alerts API. These require a personal token (free for non-commercial use on request). The token is stored only in your browser (`localStorage`), never sent anywhere except to that API.
-- **Permissions:** optional host permission for the API host. Notifications are optional and requested on enable.
-- **Config:** `token`, `pinned` regions, `notify` on/off.
-- **Size:** default 4×4, min 3×3, max 8×8. The map is an embedded SVG (no remote tiles).
-- **Important:** this is a convenience display. It is not a replacement for official alerts and sirens.
-
-### Threat ETA calculator 📋 (target 0.6.0)
-A calculator, not a live tracker. You choose a point (a place name from a built-in list or coordinates) and a threat type; it computes the great-circle distance to your pinned locations and an approximate time of flight from a speed table, and shows what time an alert might be expected if none has been declared yet.
-- **Data:** none. It runs offline with typical published speeds per type (editable in the widget settings).
-- **Permissions:** none.
-- **Config:** `home` (your location), `speeds` table.
-- **Limits, stated plainly:** VEGA does not receive live flight tracks. There is no public API for them, and scraping chat channels is fragile and out of scope. Results are rough estimates; they ignore routing, altitude and manoeuvres, and must not be used as a safety decision. The widget carries this notice.
 
 ### GitHub panel 📋 (unscheduled)
 Your pull-request work in one tile.
@@ -231,12 +235,13 @@ Clipboard shelf, habit streaks, world clocks, currency rates, system stats (not 
 - [x] Links settings per tile (layout, columns, markers, groups, quick add)
 - [x] World clocks
 - [x] Countdown
-- [x] Rates (NBU)
+- [x] Rates (NBU, monobank, crypto)
 - [x] Ambient sounds
 
 **0.6.0**
-- [ ] Air-raid alerts map
-- [ ] Threat ETA calculator
+- [x] Air-raid alerts widget: schematic map with the chosen oblast(s) in focus, the alerts.in.ua feed, a spread-based arrival estimate, a trip planner, notifications
+- [x] Air-raid alerts: optional live tracks from kudyletyt.com (unofficial, opt-in)
+- [ ] Air-raid alerts: a real boundary map (licensed oblast/raion polygons)
 
 **Later (unscheduled)**
 - [ ] GitHub panel (pull requests, reviews, issues, notifications, CI)

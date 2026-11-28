@@ -33,7 +33,7 @@ A new tab is the page you see a hundred times a day. VEGA makes it calm, fast an
 
 | | |
 | --- | --- |
-| **Widgets** | Clock (7 styles), weather, focus timer, tasks, notes, link groups, power outage schedule, world clocks, countdown, currency rates, ambient sounds. Each adapts its layout to the size you give it and has its own settings. See [docs/WIDGETS.md](docs/WIDGETS.md). |
+| **Widgets** | Clock (7 styles), weather, focus timer, tasks, notes, link groups, power outage schedule, world clocks, countdown, currency rates, ambient sounds, air-raid alerts. Each adapts its layout to the size you give it and has its own settings. See [docs/WIDGETS.md](docs/WIDGETS.md). |
 | **Workspaces** | Up to nine boards (`1`–`9`), i3-style, each with its own layout. Send a tile to another workspace with `Shift`+`1`–`9`, the tile menu, the command bar, or by dragging it onto the workspace button. |
 | **Command bar** | `/` or `Ctrl+K`. Fuzzy search over your links and commands. `! g query` searches a specific engine, `+ buy milk` adds a task. Typing in the wrong layout is detected. |
 | **Tile menu** | Hover a tile, or press `M`: delete, duplicate, move to a workspace, reset size. |
@@ -93,15 +93,28 @@ Shortcuts are matched by physical key (`event.code`), so they work with any keyb
 
 Inside a tile: **notes** `Enter` puts the caret in the text; **tasks** `↓`/`↑` or `j`/`k` move, `Space` ticks, `x` removes, `i` types a new one; **links** arrows or `h j k l` move to the nearest link, `Enter` opens it, `Ctrl+Enter` opens a new tab.
 
-## Power outage schedule
+## Power outage schedule (Ukraine)
 
-The *outages* widget shows whether the power is on, when that changes next, and today's and tomorrow's schedule on a 24-hour bar (Kyiv time).
+> **This widget is specific to Ukraine.** Russia's attacks on Ukraine's energy infrastructure force the grid operators to switch power off by schedule, and people plan their day around those schedules. The *outages* widget exists for that. Outside Ukraine it has no use, and every other widget works without it.
+
+The widget shows whether the power is on right now, a live countdown to the next change, and today's and tomorrow's schedule on a 24-hour bar (Kyiv time). The layout adapts to the tile size, and the last schedule is cached, so it still shows offline.
 
 ![Outages widget](docs/img/outages.png)
 
-- **Automatic** for the operators [Yasno](https://yasno.ua/) publishes (Kyiv and Dnipro today): choose region, operator and group once. The schedule is cached, so it still shows offline.
-- **Paste a schedule** for any other region: paste the text from your Telegram bot or the operator's site. VEGA reads the time ranges, understands "today"/"tomorrow" and 🔴/🟢 lines, and rolls over at midnight.
-- Set up from the tile menu (`m` → *Configure…*) or press `Enter` on an unconfigured tile. Most regional operators publish only on their own sites, and VEGA does not work around sites that block automated access; more automatic sources are planned as open data becomes available.
+Three sources, chosen per tile:
+- **[bezsvitla.com.ua](https://bezsvitla.com.ua/)** (default): automatic schedules for every region of Ukraine. You can find your queue by **street and house** (Kyiv and cities with street data) or pick or type it yourself (for example `3.1`).
+- **[Yasno](https://yasno.ua/)**: automatic schedules for the operators Yasno publishes (Kyiv and Dnipro).
+- **Paste a schedule**: works for any region. Paste the text from your Telegram bot or the operator's site. VEGA reads the time ranges, understands "today"/"tomorrow" and 🔴/🟢 lines, and rolls over at midnight.
+
+Add several tiles and give each its own name (for example *Home* and *Work*) to follow more than one queue at once. Set up from the tile menu (`m` → *Configure…*) or press `Enter` on an unconfigured tile. The sites are asked for permission only when you configure the widget. VEGA does not work around sites that block automated access.
+
+## Air-raid alerts (Ukraine)
+
+> **This widget is specific to Ukraine too**, for the same reason as the outages widget: it exists to help people plan around Russia's attacks, not as general-purpose news.
+
+Pin the oblast(s) you care about (click a circle on the map, or choose them in Settings) and the tile shows their live status from [alerts.in.ua](https://alerts.in.ua/), a rough estimate of how soon an alert might reach you based on how the alert area has been spreading, and a trip planner that compares that estimate against the places you might go. Notifications are optional. See [docs/WIDGETS.md](docs/WIDGETS.md#air-raid-alerts-ukraine-) for exactly what the estimate can and cannot tell you — it is a planning aid, never a safety source.
+
+Optionally (off by default), it can also show live drone/missile tracks from [kudyletyt.com](https://www.kudyletyt.com/), an independent, volunteer-run monitoring project — not alerts.in.ua, not affiliated with VEGA, and with no formal API terms published, so treat it as best-effort. A track that is heading your way sharpens the estimate; turning it on asks its own permission.
 
 ## Wallpapers
 
@@ -138,6 +151,8 @@ VEGA collects nothing. Data stays in your browser. The ambient sounds widget str
 | `https://data-api.binance.vision/*` | optional | The rates widget, crypto prices (Binance public market data). Asked when you choose that source. |
 | `https://bezsvitla.com.ua/*` | optional | The outages widget, universal Ukrainian schedule & address lookup source. Asked when you configure it. |
 | `https://app.yasno.ua/*` | optional | The outages widget, Yasno source. Asked when you choose it. |
+| `https://api.alerts.in.ua/*` | optional | The air-raid alerts widget, official per-oblast status. Asked when you save a token. |
+| `https://api.kudyletyt.com/*` | optional | The air-raid alerts widget, optional live drone/missile tracks (unofficial, see above). Asked only if you turn it on. |
 | `tabs`, `bookmarks`, `history` | optional | Searching them from the command bar. Asked when you enable it. |
 | `sessions` | optional | Hiding the helper tab of "Focus the page" from recently closed tabs. Asked when you enable it. |
 
@@ -194,7 +209,8 @@ See the checklist in [docs/WIDGETS.md](docs/WIDGETS.md#checklist) and the [chang
 
 - **0.4** Power outage schedule widget (shipped), more automatic sources as open data allows.
 - **0.5** Clock styles and alignment, per-tile link settings, world clocks, countdown, currency rates, ambient sounds (shipped).
-- **0.6** Air-raid alerts map and an offline threat ETA calculator.
+- **0.6** Air-raid alerts widget (shipped): the official alerts.in.ua status per oblast, a schematic map with your oblast(s) in focus, a spread-based arrival estimate, a trip planner, and optional live tracks from an independent project.
+- **Next** a real boundary map for that widget (licensed oblast polygons) and live target positions, once a source permits reuse.
 - **Ideas** a radio/music player, recorded sound loops.
 - **Later** GitHub panel (pull requests, reviews, CI), calendar (ICS) and Google Calendar/Tasks, Jira panel and Jira-style tasks with a board view, RSS, bookmarks and history widgets, an in-page link editor, optional AI in the command bar (your own key, stored locally), browser sync, packaging scripts, English/Ukrainian UI switch.
 

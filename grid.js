@@ -17,6 +17,7 @@ const META = {
   rates:     { def: [3, 2], min: [2, 1], max: [8, 8] },
   countdown: { def: [3, 2], min: [2, 1], max: [8, 8] },
   worldclock:{ def: [4, 2], min: [2, 1], max: [8, 8] },
+  alerts:    { def: [5, 4], min: [3, 3], max: [8, 8] },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));

@@ -1191,6 +1191,121 @@ describe('widget helpers (pure)', () => {
   });
 });
 
+/* ───────────── 0.6.0: air-raid alerts (pure logic) ───────────── */
+describe('alerts widget helpers (pure)', () => {
+  const Wd = require('../widgets.js');
+
+  test('27 oblasts, in the exact order of the alerts.in.ua status string, each with a usable id and coordinates', () => {
+    assert.equal(Wd.OBLASTS.length, 27);
+    const ids = Wd.OBLASTS.map(o => o.id);
+    assert.equal(new Set(ids).size, 27, 'ids are unique');
+    for (const o of Wd.OBLASTS) { assert.ok(o.name, o.id); assert.ok(Math.abs(o.lat) <= 90 && Math.abs(o.lon) <= 180, o.id); }
+    assert.equal(Wd.OBLAST_BY_ID['kyiv-city'], 9); assert.equal(Wd.OBLAST_BY_ID['kharkiv'], 21); assert.equal(Wd.OBLAST_BY_ID['chernihiv'], 26);
+  });
+
+  test('parseOblastString: v2 codes R/Y/P/N decode to a level and an active flag, one row per oblast', () => {
+    const s = 'RNNNNNNNNYNNRNNNNNNNNNNNNNN';                       // from the API docs: index 0 red, 9 yellow, 12 red
+    const rows = Wd.parseOblastString(s);
+    assert.equal(rows.length, 27);
+    assert.deepEqual(rows[0], { ...Wd.OBLASTS[0], idx: 0, code: 'R', level: 'red', active: true });
+    assert.deepEqual([rows[9].level, rows[9].active], ['yellow', true]);
+    assert.deepEqual([rows[1].level, rows[1].active], [null, false]);
+    assert.equal(Wd.parseOblastString('RNN'), null, 'the wrong length is rejected, not silently truncated');
+    assert.equal(Wd.parseOblastString(null), null);
+  });
+
+  test('haversineKm and projectOblasts: real-world distances and a stable, bounded 2D layout', () => {
+    const km = Wd.haversineKm(Wd.OBLASTS[Wd.OBLAST_BY_ID['kyiv-city']], Wd.OBLASTS[Wd.OBLAST_BY_ID['kharkiv']]);
+    assert.ok(km > 350 && km < 500, km);                              // Kyiv-Kharkiv is roughly 410-480 km depending on route
+    assert.equal(Wd.haversineKm(Wd.OBLASTS[0], Wd.OBLASTS[0]), 0);
+    const p = Wd.projectOblasts();
+    assert.equal(p.length, 27);
+    for (const o of p) { assert.ok(o.x >= 0 && o.x <= Wd.ALERTS_SPACE.w); assert.ok(o.y >= 0 && o.y <= Wd.ALERTS_SPACE.h); }
+    assert.ok(p[Wd.OBLAST_BY_ID['chernihiv']].y < p[Wd.OBLAST_BY_ID['odesa']].y, 'Chernihiv (north) sits above Odesa (south)');
+  });
+
+  test('estimateFromEvents: a fresh activation elsewhere gives a banded ETA; stale, overdue or self events give none', () => {
+    const target = Wd.OBLAST_BY_ID['kyiv-city'], from = Wd.OBLAST_BY_ID['kharkiv'], now = Date.now();
+    const est = Wd.estimateFromEvents([{ idx: from, at: now - 5 * 60000 }], target, Wd.THREAT_SPEEDS.drone, now);
+    assert.ok(est.minLeft > 0 && est.maxLeft > est.minLeft, JSON.stringify(est));
+    assert.equal(est.fromIdx, from);
+    assert.equal(Wd.estimateFromEvents([{ idx: from, at: now - (Wd.ALERTS_FRESH_MIN + 10) * 60000 }], target, Wd.THREAT_SPEEDS.drone, now), null, 'too old to drive an estimate');
+    assert.equal(Wd.estimateFromEvents([{ idx: from, at: now - 10 * 60000 }], target, Wd.THREAT_SPEEDS.ballistic, now), null, 'already overdue at that speed');
+    assert.equal(Wd.estimateFromEvents([{ idx: target, at: now }], target, Wd.THREAT_SPEEDS.drone, now), null, 'an event in the target itself is not a source');
+    assert.equal(Wd.estimateFromEvents([], target, Wd.THREAT_SPEEDS.drone, now), null);
+  });
+
+  test('estimateFromManual mirrors estimateFromEvents from a hand-set point and time', () => {
+    const target = Wd.OBLAST_BY_ID['lviv'], from = Wd.OBLAST_BY_ID['ternopil'], now = Date.now();
+    assert.equal(Wd.estimateFromManual(null, target, Wd.THREAT_SPEEDS.drone, now), null);
+    const est = Wd.estimateFromManual({ idx: from, setAt: now - 2 * 60000 }, target, Wd.THREAT_SPEEDS.drone, now);
+    assert.ok(est.minLeft > 0); assert.equal(est.fromIdx, from);
+  });
+
+  test('tripCompare: comfortable, tight, wait and unknown', () => {
+    assert.equal(Wd.tripCompare(null, 10), 'unknown');
+    assert.equal(Wd.tripCompare(60, 10), 'comfortable');
+    assert.equal(Wd.tripCompare(15, 10), 'tight');
+    assert.equal(Wd.tripCompare(5, 10), 'wait');
+  });
+
+  test('alertsCfg: defaults, limits, and bad input are rejected without throwing', () => {
+    const d = Wd.alertsCfg(undefined);
+    assert.deepEqual(d, { name: '', token: '', pinned: [], focus: true, threat: 'drone', speeds: Wd.THREAT_SPEEDS, useTracks: false, trackSpeeds: Wd.TRACK_SPEEDS, manualFrom: '', manualSetAt: undefined, places: [], notify: false, sound: false });
+    const c = Wd.alertsCfg({
+      token: '  secret  ', pinned: ['kyiv-city', 'bogus', 'kyiv-city', 'kharkiv', 'lviv', 'odesa', 'sumy', 'poltava', 'dnipropetrovsk'],
+      threat: 'nope', speeds: { drone: 'x', cruise: 5000 }, places: [{ name: 'Shop', minutes: 15 }, { name: '', minutes: 5 }, { name: 'Clamped', minutes: -1 }, { name: 'Bad', minutes: 'soon' }, null],
+      manualFrom: 'kharkiv', manualSetAt: Date.now() - 1000,
+    });
+    assert.equal(c.pinned.length, 6, 'capped at the pinned limit, duplicates and unknown ids dropped');
+    assert.deepEqual(c.pinned.slice(0, 2), ['kyiv-city', 'kharkiv']);
+    assert.equal(c.threat, 'drone'); assert.equal(c.speeds.drone, Wd.THREAT_SPEEDS.drone); assert.equal(c.speeds.cruise, 5000);
+    assert.equal(c.places.length, 2, 'a blank name and a non-numeric time are dropped'); assert.equal(c.places[0].name, 'Shop');
+    assert.equal(c.places[1].minutes, 1, 'a travel time below the minimum is clamped, not dropped');
+    assert.equal(c.manualFrom, 'kharkiv'); assert.ok(c.manualSetAt > 0);
+    assert.equal(Wd.alertsCfg({ manualFrom: 'kharkiv' }).manualSetAt, undefined, 'no manual estimate without an explicit mark');
+    assert.equal(Wd.alertsCfg({ places: Array.from({ length: 12 }, (_, i) => ({ name: 'p' + i, minutes: 5 })) }).places.length, Wd.ALERTS_PLACES_MAX);
+    const t = Wd.alertsCfg({ useTracks: true, trackSpeeds: { drone: 'x', jet: 600 } });
+    assert.equal(t.useTracks, true); assert.equal(t.trackSpeeds.drone, Wd.TRACK_SPEEDS.drone); assert.equal(t.trackSpeeds.jet, 600);
+    assert.equal(Wd.alertsCfg({}).useTracks, false);
+  });
+
+  test('bearingDeg and bearingGap: compass direction between two points, and the signed angle between two bearings', () => {
+    const north = { lat: 51, lon: 30 }, south = { lat: 46, lon: 30 };
+    assert.ok(Math.abs(Wd.bearingDeg(south, north)) < 2, 'due north is ~0°');
+    assert.ok(Math.abs(Wd.bearingDeg(north, south) - 180) < 2, 'due south is ~180°');
+    assert.equal(Wd.bearingGap(10, 20), 10); assert.equal(Wd.bearingGap(350, 10), 20); assert.equal(Wd.bearingGap(10, 350), -20);
+  });
+
+  test('parseTracks: the kudyletyt.com feed (GeoJSON [lon,lat] order), one row per track at its most recent point', () => {
+    const feed = { now: 1700000000000, tracks: [
+      { id: 'T1', type: 'jet', status: 'active', heading: 90, lastSeen: 1700000000000, toward: { name: 'Kyiv' }, pts: [{ t: 1699999000000, pt: [35, 48] }, { t: 1700000000000, pt: [36, 48.5] }] },
+      { id: 'T2', type: 'bogus', status: 'ended', pts: [{ t: 1, pt: [30, 50] }] },
+      { id: 'T3', type: 'drone', status: 'active', pts: [] },
+      null,
+    ] };
+    const p = Wd.parseTracks(feed);
+    assert.equal(p.tracks.length, 2);
+    assert.deepEqual([p.tracks[0].lat, p.tracks[0].lon], [48.5, 36], 'uses the last point, and GeoJSON [lon,lat] is reordered to {lat,lon}');
+    assert.equal(p.tracks[0].active, true); assert.equal(p.tracks[0].toward, 'Kyiv');
+    assert.equal(p.tracks[1].type, 'drone', 'an unknown type falls back to drone'); assert.equal(p.tracks[1].active, false);
+    assert.equal(Wd.parseTracks({ tracks: 'nope' }), null); assert.equal(Wd.parseTracks(null), null);
+  });
+
+  test('estimateFromTrack: only an active track heading roughly at the target, fresh enough, gives a banded ETA', () => {
+    const target = Wd.OBLAST_BY_ID['dnipropetrovsk'], now = Date.now();
+    const toward = Wd.OBLASTS[target];
+    const heading = Wd.bearingDeg({ lat: 46.6, lon: 33.0 }, toward);
+    const onCourse = { lat: 46.6, lon: 33.0, type: 'drone', active: true, heading, lastSeen: now - 10 * 60000 };
+    const est = Wd.estimateFromTrack(onCourse, target, Wd.TRACK_SPEEDS.drone, now);
+    assert.ok(est.minLeft > 0 && est.maxLeft >= est.minLeft); assert.equal(est.trackType, 'drone');
+    assert.equal(Wd.estimateFromTrack({ ...onCourse, active: false }, target, Wd.TRACK_SPEEDS.drone, now), null, 'an ended track gives no estimate');
+    assert.equal(Wd.estimateFromTrack({ ...onCourse, heading: (heading + 170) % 360 }, target, Wd.TRACK_SPEEDS.drone, now), null, 'heading away from the target gives no estimate');
+    assert.equal(Wd.estimateFromTrack({ ...onCourse, lastSeen: now - (Wd.ALERTS_FRESH_MIN + 5) * 60000 }, target, Wd.TRACK_SPEEDS.drone, now), null, 'too stale');
+    assert.equal(Wd.estimateFromTrack({ ...onCourse, heading: null }, target, Wd.TRACK_SPEEDS.drone, now), null, 'no heading, no estimate');
+  });
+});
+
 describe('widgets in the app (jsdom)', () => {
   const settle = (ms = 40) => new Promise(r => setTimeout(r, ms));
   const withTiles = (...tiles) => { const fx = fixture(); tiles.forEach((t, i) => fx.ws[3].items.push({ id: 'n' + i, x: 0, y: i * 2, w: 5, h: 3, cfg: {}, ...t })); fx.active = 3; return fx; };
@@ -1464,6 +1579,138 @@ describe('widgets in the app (jsdom)', () => {
       assert.ok([...tile(a, 'links').querySelectorAll('a.lk')].some(x => x.textContent === 'Example' && x.getAttribute('href') === 'https://example.com/'));
     } finally { await a.close(); }
   });
+
+  describe('air-raid alerts (0.6.0)', () => {
+    const Wd = require('../widgets.js');
+    const ONE_RED = 'R' + 'N'.repeat(26);                             // Crimea (index 0) active, everyone else quiet
+    const alertsNet = (raw, fail) => w => { w.fetch = async () => { if (fail) throw new Error('offline'); return { ok: true, text: async () => JSON.stringify(raw) }; }; };
+    // There is no "refresh this tile" hotkey yet (only Configure-save and the Retry button call load(true)),
+    // so a no-op Configure round trip is the realistic way to force a re-fetch in a test.
+    const forceReload = a => { menuConfigure(a, 'alerts'); saveBtn(a).click(); };
+
+    test('with no token: Set up opens Configure; with a token the map shows even before anything is pinned', async () => {
+      const a = await boot(withTiles({ type: 'alerts' }), quiet);
+      try {
+        const t = tile(a, 'alerts');
+        assert.match(t.textContent, /Set up/);
+        t.querySelector('.btn.main').click();
+        assert.ok(a.w.document.querySelector('.mbox'));
+        set(a.w.document.querySelector('[aria-label="alerts.in.ua token"]'), 'tok123');
+      } finally { await a.close(); }
+    });
+
+    test('a token with nothing pinned yet: the map is shown with a hint, so you can pin an oblast by clicking it', async () => {
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123' } }), alertsNet('N'.repeat(27)));
+      try {
+        await settle(80);
+        const t = tile(a, 'alerts');
+        assert.equal(t.querySelectorAll('svg.al-map .al-o').length, 27);
+        assert.equal(t.querySelectorAll('svg.al-map .al-o.pin').length, 0);
+        assert.match(t.textContent, /oblast/i);
+        assert.equal(t.querySelector('.al-eta'), null, 'no estimate line until something is pinned');
+      } finally { await a.close(); }
+    });
+
+    test('a token and a pinned oblast load live status and draw a map with that oblast highlighted', async () => {
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123', pinned: ['kyiv-city'] } }), alertsNet(ONE_RED));
+      try {
+        await settle(80);
+        const t = tile(a, 'alerts');
+        assert.ok(t.querySelector('svg.al-map'));
+        assert.equal(t.querySelectorAll('svg.al-map .al-o').length, 27);
+        assert.ok(t.querySelector('svg.al-map .al-o.pin'), 'the pinned oblast gets a ring');
+        assert.match(t.querySelector('.al-pins').textContent, /Kyiv \(city\): No alert/);
+        assert.match(t.querySelector('.al-eta').textContent, /No incoming estimate/);
+        assert.match(t.querySelector('.ts').textContent, /alerts\.in\.ua/);
+      } finally { await a.close(); }
+    });
+
+    test('an oblast turning active drives an ETA towards a pinned oblast, shown as a range, with a dashed line on the map', async () => {
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123', pinned: ['kyiv-city'], threat: 'drone' } }), alertsNet('N'.repeat(27)));
+      try {
+        await settle(80);
+        assert.equal(tile(a, 'alerts').querySelector('.al-eta').textContent, 'No incoming estimate right now.');
+        const kharkiv = 'N'.repeat(21) + 'R' + 'N'.repeat(5);          // Kharkiv (index 21) goes active
+        a.w.fetch = async () => ({ ok: true, text: async () => JSON.stringify(kharkiv) });
+        forceReload(a);
+        await settle(80);
+        const eta = tile(a, 'alerts').querySelector('.al-eta').textContent;
+        assert.match(eta, /Possible alert in \d+–\d+ min/, eta);
+        assert.ok(tile(a, 'alerts').querySelector('svg.al-map .al-line'), 'a line is drawn from the source oblast towards the pinned one');
+      } finally { await a.close(); }
+    });
+
+    test('Configure: pick oblasts on the map by click, set places and see a trip comparison, threat speed changes the estimate', async () => {
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123' } }), alertsNet('N'.repeat(27)));
+      try {
+        await settle(80);
+        const kyiv = tile(a, 'alerts').querySelector('svg.al-map .al-o[aria-label^="Kyiv (city)"]');
+        kyiv.dispatchEvent(new a.w.Event('click', { bubbles: true }));                     // draw() rebuilds the map, so re-query after clicking
+        assert.ok(tile(a, 'alerts').querySelector('svg.al-map .al-o[aria-label^="Kyiv (city)"]').classList.contains('pin'));
+        assert.equal(a.saved().ws[3].items.find(i => i.id === 'n0').cfg.pinned[0], 'kyiv-city');
+        menuConfigure(a, 'alerts');
+        a.w.document.querySelector('.led-w > .btn').click();
+        const row = [...a.w.document.querySelectorAll('.mbox .led-r')].pop();
+        const [n, m] = row.querySelectorAll('input'); n.value = 'Café'; m.value = '20';
+        saveBtn(a).click(); await settle(80);
+        assert.equal(a.w.document.querySelector('.mbox'), null);
+        const cfg = a.saved().ws[3].items.find(i => i.id === 'n0').cfg;
+        assert.equal(cfg.places.length, 1); assert.equal(cfg.places[0].minutes, 20);
+        assert.match(tile(a, 'alerts').querySelector('.al-p-row').textContent, /Café/);
+      } finally { await a.close(); }
+    });
+
+    test('notify and sound only fire for a pinned oblast turning active, and only once per activation', async () => {
+      const notified = [];
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123', pinned: ['lviv'], notify: true } }), w => {
+        alertsNet('N'.repeat(27))(w);
+        w.Notification = class { static permission = 'granted'; constructor(title, opts) { notified.push([title, opts.body]); } };
+      });
+      try {
+        await settle(80);
+        const other = 'R' + 'N'.repeat(26);                           // Crimea, not the pinned oblast (Lviv)
+        a.w.fetch = async () => ({ ok: true, text: async () => JSON.stringify(other) });
+        forceReload(a); await settle(80);
+        assert.deepEqual(notified, [], 'an unrelated oblast does not notify');
+        const lvivIdx = Wd.OBLAST_BY_ID.lviv;
+        const lvivOn = lvivIdx === 0 ? 'R' + 'N'.repeat(26) : 'N'.repeat(lvivIdx) + 'R' + 'N'.repeat(26 - lvivIdx);
+        a.w.fetch = async () => ({ ok: true, text: async () => JSON.stringify(lvivOn) });
+        forceReload(a); await settle(80);
+        assert.equal(notified.length, 1); assert.match(notified[0][1], /Lviv/);
+        forceReload(a); await settle(80);                             // still active: no repeat notification
+        assert.equal(notified.length, 1);
+      } finally { await a.close(); }
+    });
+
+    test('live tracks (optional, off by default): a marker renders only when turned on, and a track on course drives the estimate', async () => {
+      const target = Wd.OBLAST_BY_ID['dnipropetrovsk'], toward = Wd.OBLASTS[target];
+      const heading = Wd.bearingDeg({ lat: 46.6, lon: 33.0 }, toward);
+      const feed = { tracks: [{ id: 'T1', type: 'jet', status: 'active', heading, toward: { name: 'test' }, pts: [{ t: Date.now() - 5 * 60000, pt: [33.0, 46.6] }] }] };
+      const net = w => {
+        w.fetch = async u => {
+          u = String(u);
+          if (u.includes('alerts.in.ua')) return { ok: true, text: async () => JSON.stringify('N'.repeat(27)) };
+          if (u.includes('kudyletyt.com')) return { ok: true, json: async () => feed };
+          throw new Error('unexpected url ' + u);
+        };
+      };
+      const a = await boot(withTiles({ type: 'alerts', cfg: { token: 'tok123', pinned: ['dnipropetrovsk'] } }), net);
+      try {
+        await settle(80);
+        assert.equal(tile(a, 'alerts').querySelectorAll('svg.al-map .al-tr').length, 0, 'tracks are not fetched or drawn until enabled');
+        assert.equal(tile(a, 'alerts').querySelector('.al-eta').textContent, 'No incoming estimate right now.');
+        menuConfigure(a, 'alerts');
+        [...a.w.document.querySelectorAll('.mbox .fr.chk')].find(r => r.textContent.startsWith('Show live tracks')).querySelector('input').checked = true;
+        saveBtn(a).click(); await settle(80);
+        const t = tile(a, 'alerts');
+        assert.equal(t.querySelectorAll('svg.al-map .al-tr').length, 1);
+        assert.ok(t.querySelector('svg.al-map .al-tr-jet'));
+        assert.match(t.querySelector('.al-eta').textContent, /Possible alert in \d+–\d+ min — from a live jet-powered drone track/);
+        assert.ok(t.querySelector('svg.al-map .al-line'), 'a line is drawn from the track towards the pinned oblast');
+        assert.match(t.querySelector('.ts').textContent, /kudyletyt\.com/);
+      } finally { await a.close(); }
+    });
+  });
 });
 
 describe('0.5.0 release hygiene', () => {
@@ -1490,7 +1737,7 @@ describe('0.5.0 release hygiene', () => {
 describe('workspace tabs: rename in place', () => {
   const tab = (a, i) => a.w.document.querySelector(`#wsbar .wsb[data-ws="${i}"]`);
   const names = a => [...a.w.document.querySelectorAll('#wsbar .wsb[data-ws]')].map(b => b.textContent);
-  const dbl = (a, i) => tab(a, i).dispatchEvent(new a.w.MouseEvent('dblclick', { bubbles: true }));
+  const dbl = (a, i) => { tab(a, i).click(); tab(a, i).click(); };
   const type = (a, v, code) => { const inp = a.w.document.querySelector('#wsbar input.wsi'); if (v !== null) inp.value = v; inp.dispatchEvent(new a.w.KeyboardEvent('keydown', { code, key: code, bubbles: true })); };
 
   test('double-click turns the name into a field; Enter saves it, hotkeys stay quiet while typing', async () => {
@@ -1501,7 +1748,7 @@ describe('workspace tabs: rename in place', () => {
       const inp = a.w.document.querySelector('#wsbar input.wsi');
       assert.ok(inp); assert.equal(a.w.document.activeElement, inp);
       type(a, 'Reading list', 'KeyQ');
-      assert.equal(a.saved().active, 0, 'typing Q or digits does not trigger hotkeys');
+      assert.equal(a.saved().active, 1, 'typing Q does not trigger hotkeys; the renamed tab became the active one');
       type(a, 'Reading list', 'Enter');
       assert.equal(a.w.document.querySelector('#wsbar input.wsi'), null);
       assert.equal(a.saved().ws[1].name, 'Reading list'); assert.deepEqual(names(a).map((n, i) => i === 1 ? n : n), names(a));

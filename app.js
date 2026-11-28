@@ -470,10 +470,19 @@ function delWs() {
 
 const modeText = () => mode === 'resize' ? S.modeResize : inner !== null ? S.modeInside : editing ? S.modeEdit : '';
 
+// Two clicks on a tab within 450 ms rename it. Timing is used instead of the dblclick event because switching
+// workspace redraws the bar between the clicks, and Firefox then does not deliver dblclick.
+let lastTab = { i: -1, t: 0 };
+function tabClick(i) {
+  const now = Date.now(), twice = lastTab.i === i && now - lastTab.t < 450;
+  lastTab = twice ? { i: -1, t: 0 } : { i, t: now };
+  if (twice) { if (state.active !== i) switchWs(i); renameWs(i); } else switchWs(i);
+}
+
 function renderBar() {
   const nav = $('#wsbar');
   nav.replaceChildren(
-    ...state.ws.map((w, i) => h('button', { class: 'wsb' + (i === state.active ? ' on' : ''), onclick: () => switchWs(i), ondblclick: () => renameWs(i), title: S.wsTitle(i + 1) + ' · ' + S.wsRenameHint, 'data-ws': i },
+    ...state.ws.map((w, i) => h('button', { class: 'wsb' + (i === state.active ? ' on' : ''), onclick: () => tabClick(i), title: S.wsTitle(i + 1) + ' · ' + S.wsRenameHint, 'data-ws': i },
       h('b', { text: i + 1 }), w.name && w.name !== String(i + 1) ? h('span', { class: 'wsn', text: w.name }) : null)),
     h('button', { class: 'wsb', onclick: newWs, title: S.wsNewTitle, 'aria-label': S.wsNewTitle }, '+'));
   $('#mode').textContent = modeText();
@@ -1182,6 +1191,257 @@ MODULES.ambient.render = (body, ctx) => {
   };
 };
 
+/* ═════════════ air-raid alerts (Ukraine): alerts.in.ua status per oblast, a schematic map, and an estimate
+   derived from how the alert area has been spreading. Optionally, live drone/missile tracks from kudyletyt.com,
+   an independent, unofficial OSINT project (off by default) — see docs/WIDGETS.md for what both can and cannot tell you. ═════════════ */
+const ALERTS_ORIGIN = 'https://api.alerts.in.ua/*', TRACKS_ORIGIN = 'https://api.kudyletyt.com/*', AKEY = 'hud.alerts', ALERTS_POLL = 30e3, TRACKS_POLL = 20e3;
+const alertsCache = {
+  read() { try { const j = JSON.parse(localStorage.getItem(AKEY)); return j && isObjGuard(j) ? j : {}; } catch { return {}; } },
+  write(v) { try { localStorage.setItem(AKEY, JSON.stringify(v)); } catch { /* storage full or blocked */ } },
+};
+const isObjGuard = v => v && typeof v === 'object' && !Array.isArray(v);
+async function fetchAlerts(token) {
+  const r = await fetch(W.ALERTS_ENDPOINT, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) throw new Error(r.status);
+  const raw = JSON.parse(await r.text());                        // the body is itself a JSON string, e.g. "RNNNN…"
+  if (typeof raw !== 'string' || raw.length !== W.OBLASTS.length) throw new Error('shape');
+  return { ts: Date.now(), raw };
+}
+async function fetchTracks() {
+  const r = await fetch(W.TRACKS_ENDPOINT, { headers: { Accept: 'application/json' } });
+  if (!r.ok) throw new Error(r.status);
+  const parsed = W.parseTracks(await r.json());
+  if (!parsed) throw new Error('shape');
+  return parsed;
+}
+function alertChime() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    [0, .18, .36].forEach(d => {
+      const o = ctx.createOscillator(), g = ctx.createGain();
+      o.frequency.value = 660; o.connect(g); g.connect(ctx.destination);
+      g.gain.setValueAtTime(.18, ctx.currentTime + d); g.gain.exponentialRampToValueAtTime(.001, ctx.currentTime + d + .15);
+      o.start(ctx.currentTime + d); o.stop(ctx.currentTime + d + .16);
+    });
+  } catch { /* audio blocked until the first interaction */ }
+}
+function notifyPinned(name) {
+  try {
+    if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+    new Notification(S.al.notifyTitle, { body: S.al.notifyBody(name) });
+  } catch { /* notifications blocked */ }
+}
+
+MODULES.alerts.render = (body, ctx) => {
+  const it = ctx.it, root = h('div', { class: 'al' });
+  body.append(root);
+  let saved = alertsCache.read();
+  let oblastCache = saved.oblast || null, tracksCache = saved.tracks || null;
+  let dead = false, failed = false, tracksFailed = false, needAccess = false, loading = false, loadingTracks = false;
+  let events = [], prevActive = null;                            // events: {idx, at} — in-memory, reset on reload
+  let etaEl = null, placeEls = [], noteEl = null;
+  const PROJ = W.projectOblasts();
+  const c = () => W.alertsCfg(it.cfg);
+  const writeCache = () => alertsCache.write({ oblast: oblastCache, tracks: tracksCache });
+
+  // The best current estimate across every source: the alert-spread heuristic, a hand-marked threat, and (if
+  // enabled) live tracks whose heading points roughly at the oblast. Always returns a point to draw the line from.
+  function primaryEstimate(x, now) {
+    const pins = x.pinned.map(id => W.OBLAST_BY_ID[id]);
+    const manual = x.manualFrom && x.manualSetAt ? { idx: W.OBLAST_BY_ID[x.manualFrom], setAt: x.manualSetAt } : null;
+    let best = null;
+    const take = (e, from, label) => { if (e && (!best || e.minLeft < best.minLeft)) best = { minLeft: e.minLeft, maxLeft: e.maxLeft, from, label }; };
+    for (const t of pins) {
+      const a = W.estimateFromEvents(events, t, x.speeds[x.threat], now);
+      if (a) take(a, PROJ[a.fromIdx], S.al.autoTag);
+      if (manual && manual.idx !== t) { const m = W.estimateFromManual(manual, t, x.speeds[x.threat], now); if (m) take(m, PROJ[manual.idx], S.al.manualTag); }
+      if (x.useTracks && tracksCache) for (const tr of tracksCache.tracks) {
+        const e = W.estimateFromTrack(tr, t, x.trackSpeeds[tr.type], now);
+        if (e) take(e, W.projectPoint(tr.lat, tr.lon), S.al.trackTag(S.al.trackNames[tr.type]));
+      }
+    }
+    return best;
+  }
+
+  const buildMap = (x, rows) => {
+    const svg = svgEl('svg', { viewBox: `0 0 ${W.ALERTS_SPACE.w} ${W.ALERTS_SPACE.h}`, class: 'al-map', role: 'img', 'aria-label': S.al.mapLabel });
+    const pinnedIdx = x.pinned.map(id => W.OBLAST_BY_ID[id]);
+    for (const o of PROJ) {
+      const row = rows && rows[o.idx];
+      const level = row && row.active ? row.level || 'partial' : 'none';
+      const pinned = pinnedIdx.includes(o.idx);
+      const dist = x.focus ? W.nearestPinnedKm(o.idx, pinnedIdx) : null;
+      const op = pinned || dist === null ? 1 : Math.max(.22, 1 - dist / 900);
+      const g = svgEl('circle', { cx: o.x.toFixed(1), cy: o.y.toFixed(1), r: pinned ? 13 : 10, class: 'al-o ' + (level === 'red' ? 'r' : level === 'yellow' ? 'y' : level === 'partial' ? 'p' : 'n') + (pinned ? ' pin' : ''), tabindex: '0', role: 'button', 'aria-label': `${o.name}: ${S.al.level[level]}` });
+      g.style.opacity = op.toFixed(2);
+      g.append(svgEl('title', {}));
+      g.lastChild.textContent = o.name + ' — ' + S.al.level[level];
+      const toggle = () => { const cur = c().pinned; const next = cur.includes(o.id) ? cur.filter(i => i !== o.id) : cur.length < W.ALERTS_PINNED_MAX ? [...cur, o.id] : cur; it.cfg.pinned = next; save(); draw(); };
+      g.addEventListener('click', toggle);
+      g.addEventListener('keydown', e => { if (e.code === 'Enter' || e.code === 'Space') { e.preventDefault(); toggle(); } });
+      svg.append(g);
+    }
+    if (x.useTracks && tracksCache) for (const tr of tracksCache.tracks) {
+      const p = W.projectPoint(tr.lat, tr.lon);
+      const mk = svgEl('path', { d: 'M0,-9 L6,7 L0,3 L-6,7 Z', class: 'al-tr al-tr-' + tr.type + (tr.active ? '' : ' stale'), transform: `translate(${p.x.toFixed(1)},${p.y.toFixed(1)}) rotate(${(tr.heading || 0).toFixed(0)})` });
+      mk.append(svgEl('title', {}));
+      mk.lastChild.textContent = `${S.al.trackNames[tr.type]} (${tr.active ? S.al.trackActive : S.al.trackEnded})${tr.toward ? ' → ' + tr.toward : ''}`;
+      svg.append(mk);
+    }
+    const now = Date.now(), est = primaryEstimate(x, now);
+    if (est && pinnedIdx.length) {
+      // the pinned oblast the current estimate is actually aimed at: nearest, on the projected map, to its source point
+      const nearest = pinnedIdx.map(i => PROJ[i]).reduce((a, b) => (est.from.x - a.x) ** 2 + (est.from.y - a.y) ** 2 < (est.from.x - b.x) ** 2 + (est.from.y - b.y) ** 2 ? a : b);
+      svg.append(svgEl('line', { x1: est.from.x.toFixed(1), y1: est.from.y.toFixed(1), x2: nearest.x.toFixed(1), y2: nearest.y.toFixed(1), class: 'al-line' }));
+    }
+    return svg;
+  };
+
+  const draw = () => {
+    const x = c();
+    if (!x.token) { root.replaceChildren(h('div', { class: 'al-empty' }, h('div', { class: 'note', text: S.al.setupHint }), h('button', { class: 'btn main', onclick: configure }, S.al.setup))); return; }
+    const rows = oblastCache && W.parseOblastString(oblastCache.raw);
+    if (oblastCache && !rows) { oblastCache = null; failed = true; }              // corrupt or pre-0.6 cache: treat as missing
+    if (!oblastCache) {
+      const msg = needAccess ? S.al.setupHint : failed ? S.al.fail : S.al.loading;
+      root.replaceChildren(h('div', { class: 'al-empty' }, h('div', { class: 'note', text: msg }), needAccess ? h('button', { class: 'btn main', onclick: configure }, S.al.setup) : failed ? h('button', { class: 'btn', onclick: () => load(true) }, S.al.retry) : null));
+      return;
+    }
+    // The map is shown as soon as data loads, pinned or not: clicking an oblast on it is how you pin your first one.
+    const now = Date.now(), est = x.pinned.length ? primaryEstimate(x, now) : null;
+    etaEl = h('div', { class: 'al-eta' + (est ? '' : ' dim'), text: est ? S.al.eta(est.minLeft, est.maxLeft) + (est.label ? ' — ' + est.label : '') : S.al.etaNone });
+    noteEl = h('div', { class: 'note al-note', text: x.manualFrom && x.manualSetAt ? S.al.manualNote(W.OBLASTS[W.OBLAST_BY_ID[x.manualFrom]].name, Math.round((now - x.manualSetAt) / 60000)) : S.al.disclaimer });
+    placeEls = x.places.map(p => {
+      const badge = h('span', { class: 'al-badge' });
+      return { p, row: h('div', { class: 'al-p-row' }, h('span', { text: p.name }), badge), badge };
+    });
+    root.replaceChildren(
+      buildMap(x, rows),
+      h('div', { class: 'al-info' },
+        x.pinned.length
+          ? h('div', { class: 'al-pins' }, x.pinned.map(id => {
+            const idx = W.OBLAST_BY_ID[id], row = rows[idx], level = row.active ? row.level || 'partial' : 'none';
+            return h('span', { class: 'al-pin al-' + level, text: W.OBLASTS[idx].name + ': ' + S.al.level[level] });
+          }))
+          : h('div', { class: 'note al-note', text: S.al.pickHint }),
+        x.pinned.length ? etaEl : null, noteEl,
+        placeEls.length ? h('div', { class: 'al-places' }, placeEls.map(pe => pe.row)) : null));
+    tick();
+    const bits = [S.al.source, S.al.updated(Math.max(0, Math.round((now - oblastCache.ts) / 60000)))];
+    if (failed) bits.push(S.al.offline);
+    if (x.useTracks) bits.push(tracksCache ? S.al.tracksSource : tracksFailed ? S.al.tracksOffline : S.al.loading);
+    ctx.setStatus(bits.join(' · '));
+  };
+
+  const tick = () => {
+    const x = c(); if (!oblastCache || !x.pinned.length) return;
+    const now = Date.now(), est = primaryEstimate(x, now);
+    if (etaEl) { etaEl.textContent = est ? S.al.eta(est.minLeft, est.maxLeft) + (est.label ? ' — ' + est.label : '') : S.al.etaNone; etaEl.classList.toggle('dim', !est); }
+    for (const { p, badge } of placeEls) {
+      const v = W.tripCompare(est ? est.minLeft : null, p.minutes);
+      badge.textContent = S.al.trip[v]; badge.className = 'al-badge al-' + v;
+    }
+  };
+
+  const detectTransitions = next => {
+    const rows = W.parseOblastString(next.raw); if (!rows) return;
+    const now = Date.now(), activeSet = new Set(rows.filter(r => r.active).map(r => r.idx));
+    const x = c(), watched = new Set(x.pinned.map(id => W.OBLAST_BY_ID[id]));
+    if (prevActive) for (const idx of activeSet) if (!prevActive.has(idx)) {
+      events.push({ idx, at: now });
+      if (watched.has(idx)) { if (x.notify) notifyPinned(W.OBLASTS[idx].name); if (x.sound) alertChime(); }
+    }
+    prevActive = activeSet;
+    events = events.filter(e => (now - e.at) / 60000 <= W.ALERTS_FRESH_MIN + 5);
+  };
+
+  const load = async force => {
+    if (loading) return;
+    const x = c();
+    if (!x.token) { needAccess = false; return; }
+    const fresh = oblastCache && Date.now() - oblastCache.ts < ALERTS_POLL * .9 && !force;
+    if (!fresh) {
+      loading = true;
+      try {
+        if (!(await hasOrigin(ALERTS_ORIGIN))) { needAccess = true; return; }
+        needAccess = false;
+        const next = await fetchAlerts(x.token);
+        detectTransitions(next);
+        oblastCache = next; writeCache(); failed = false;
+      } catch { failed = true; }
+      finally { loading = false; }
+    }
+    if (x.useTracks) await loadTracks(force);
+    if (!dead) draw();
+  };
+  // Independent of the alerts poll: optional, and the only feature that talks to a different, unofficial host.
+  const loadTracks = async force => {
+    if (loadingTracks) return;
+    const fresh = tracksCache && Date.now() - tracksCache.ts < TRACKS_POLL * .9 && !force;
+    if (fresh) return;
+    loadingTracks = true;
+    try {
+      if (!(await ensureOrigin(TRACKS_ORIGIN))) { tracksFailed = true; return; }
+      tracksCache = await fetchTracks(); writeCache(); tracksFailed = false;
+    } catch { tracksFailed = true; }
+    finally { loadingTracks = false; }
+  };
+
+  const configure = () => {
+    const x = c();
+    const name = mkText(S.cf.name, x.name, S.cf.namePh, 40);
+    const token = h('input', { class: 'fi', type: 'password', value: x.token, placeholder: S.al.tokenPh, 'aria-label': S.al.token, autocomplete: 'off', spellcheck: 'false' });
+    const boxes = W.OBLASTS.map(o => ({ id: o.id, el: h('input', { type: 'checkbox', checked: x.pinned.includes(o.id), disabled: !x.pinned.includes(o.id) && x.pinned.length >= W.ALERTS_PINNED_MAX ? '' : null, 'aria-label': o.name }) }));
+    const pickList = h('div', { class: 'lc-groups' }, boxes.map((b, i) => h('label', { class: 'lc-g' }, b.el, h('span', { text: W.OBLASTS[i].name }))));
+    const focus = mkChk(x.focus);
+    const threat = mkSel(S.al.threat, W.THREAT_TYPES.map(t => [t, S.al.threatNames[t]]), x.threat);
+    const speeds = Object.fromEntries(W.THREAT_TYPES.map(t => [t, h('input', { class: 'fi', type: 'number', min: 1, max: 30000, step: 1, value: String(x.speeds[t]), 'aria-label': S.al.speedLabel(S.al.threatNames[t]) })]));
+    const mFrom = mkSel(S.al.manualFrom, [['', S.al.manualNone], ...W.OBLASTS.map(o => [o.id, o.name])], x.manualFrom);
+    const mMark = mkChk(false);
+    const ed = listEditor(x.places, p => {
+      const n = mkText(S.al.placeName, p.name, S.al.placeName, 30);
+      const m = h('input', { class: 'fi', type: 'number', min: 1, max: 600, value: String(p.minutes || ''), 'aria-label': S.al.placeMinutes });
+      return { el: h('div', { class: 'led-f' }, n, m), read: () => ({ id: p.id, name: n.value.trim(), minutes: +m.value }), focus: () => n.focus() };
+    }, () => ({ id: '', name: '', minutes: '' }), W.ALERTS_PLACES_MAX);
+    const notify = mkChk(x.notify), sound = mkChk(x.sound);
+    const useTracks = mkChk(x.useTracks);
+    const trackSpeeds = Object.fromEntries(W.TRACK_TYPES.map(t => [t, h('input', { class: 'fi', type: 'number', min: 1, max: 30000, step: 1, value: String(x.trackSpeeds[t]), 'aria-label': S.al.speedLabel(S.al.trackNames[t]) })]));
+    cfgModal(MODULES.alerts.title, [
+      fld(S.cf.name, name), fld(S.al.token, token), h('div', { class: 'note', text: S.al.tokenHelp }),
+      h('h3', { text: S.al.oblasts }), pickList, chkRow(S.al.focus, focus),
+      h('h3', { text: S.al.estimate }), fld(S.al.threat, threat),
+      ...W.THREAT_TYPES.map(t => fld(S.al.speedLabel(S.al.threatNames[t]), speeds[t])),
+      fld(S.al.manualFrom, mFrom), chkRow(S.al.manualMark, mMark),
+      h('h3', { text: S.al.tracksHeading }), h('div', { class: 'note', text: S.al.tracksNote }), chkRow(S.al.tracksUse, useTracks),
+      ...W.TRACK_TYPES.map(t => fld(S.al.speedLabel(S.al.trackNames[t]), trackSpeeds[t])),
+      h('h3', { text: S.al.places }), ed.el,
+      h('h3', { text: S.al.notifyHeading }), chkRow(S.al.notify, notify), chkRow(S.al.sound, sound),
+    ], async () => {
+      const pinned = boxes.filter(b => b.el.checked).map(b => b.id);
+      const places = ed.read().filter(p => p.name || p.minutes);
+      if (places.some(p => !p.name || !(+p.minutes > 0))) return toast(S.al.badPlace);
+      if (useTracks.checked && !(await ensureOrigin(TRACKS_ORIGIN))) return toast(S.al.denied);
+      const sp = {}; for (const t of W.THREAT_TYPES) sp[t] = +speeds[t].value;
+      const tsp = {}; for (const t of W.TRACK_TYPES) tsp[t] = +trackSpeeds[t].value;
+      if (notify.checked && typeof Notification !== 'undefined' && Notification.permission === 'default') Notification.requestPermission();
+      applyCfg(it, ctx, {
+        name: name.value.trim(), token: token.value.trim(), pinned, focus: focus.checked, threat: threat.value, speeds: sp,
+        useTracks: useTracks.checked, trackSpeeds: tsp,
+        manualFrom: mFrom.value, manualSetAt: mMark.checked ? Date.now() : (mFrom.value === x.manualFrom ? x.manualSetAt : undefined),
+        places, notify: notify.checked, sound: sound.checked,
+      });
+      closeLayer(); failed = false; needAccess = false; draw(); load(true);
+    });
+  };
+
+  draw(); load(false);
+  const iv = setInterval(() => load(false), ALERTS_POLL);
+  return {
+    tick, refresh: () => load(true), configure,
+    destroy() { dead = true; clearInterval(iv); },
+    enter: () => { const f = root.querySelector('.al-o, .btn'); if (!f) return false; f.focus(); },
+  };
+};
 /* ═════════════ outages: bezsvitla.com.ua (all regions), Yasno, or pasted schedule ═════════════ */
 const OU = VEGA.outage;
 const BEZSVITLA = OU.BEZSVITLA_BASE, BEZSVITLA_ORIGIN = 'https://bezsvitla.com.ua/*';
